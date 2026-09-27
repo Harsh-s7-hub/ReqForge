@@ -1,0 +1,140 @@
+# =========================
+# Node / Next.js
+# =========================
+
+node_modules/
+.next/
+out/
+dist/
+build/
+
+# Next.js
+.next/
+.turbo/
+
+# Production
+*.tsbuildinfo
+
+
+# =========================
+# Environment / Secrets
+# =========================
+
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Keep an example file
+!.env.example
+
+
+# =========================
+# Debug / Logs
+# =========================
+
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+*.log
+logs/
+
+AGENTS.md
+CLAUDE.md
+# =========================
+# IDE / Editors
+# =========================
+
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+
+.idea/
+*.swp
+*.swo
+
+
+# =========================
+# OS
+# =========================
+
+.DS_Store
+Thumbs.db
+
+
+# =========================
+# Python / FastAPI
+# =========================
+
+__pycache__/
+*.py[cod]
+*.pyo
+
+.venv/
+venv/
+env/
+
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+*.egg-info/
+.pytest_cache/
+
+
+# =========================
+# Python environment
+# =========================
+
+.python-version
+
+
+# =========================
+# Database
+# =========================
+
+# Local database files
+*.db
+*.sqlite
+*.sqlite3
+
+
+# =========================
+# Docker
+# =========================
+
+docker-compose.override.yml
+
+
+# =========================
+# AI / ML
+# =========================
+
+# Local model files
+*.gguf
+*.safetensors
+*.bin
+
+# Embeddings / generated vector data
+vector_db/
+embeddings/
+
+# Local AI cache
+.ollama/
+
+
+# =========================
+# Secrets / Keys
+# =========================
+
+*.pem
+*.key
+*.crt
+
+
+
+secrets/
+credentials/
