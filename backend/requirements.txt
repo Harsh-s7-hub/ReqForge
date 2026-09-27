@@ -1,0 +1,22 @@
+# Backend API
+fastapi
+# Runs FastAPI
+uvicorn[standard]
+# PostgreSQL ORM
+sqlalchemy
+# Database migrations
+alembic
+# PostgreSQL driver
+psycopg[binary]
+# Request/response validation
+pydantic
+# .env configuration
+pydantic-settings
+# GitHub API requests
+httpx
+# GitHub API requests
+PyJWT
+# GitHub App private-key handling
+cryptography
+# Environment variables
+python-dotenv
