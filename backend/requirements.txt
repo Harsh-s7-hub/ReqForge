@@ -1,22 +1,14 @@
 # Backend API
-fastapi
-# Runs FastAPI
-uvicorn[standard]
-# PostgreSQL ORM
-sqlalchemy
-# Database migrations
-alembic
-# PostgreSQL driver
-psycopg[binary]
-# Request/response validation
-pydantic
-# .env configuration
-pydantic-settings
-# GitHub API requests
-httpx
-# GitHub API requests
-PyJWT
-# GitHub App private-key handling
-cryptography
-# Environment variables
-python-dotenv
+fastapi>=0.115
+uvicorn[standard]>=0.30
+pydantic>=2.9
+pydantic-settings>=2.5
+sqlalchemy>=2.0
+alembic>=1.13
+psycopg[binary]>=3.2
+PyJWT>=2.9
+cryptography>=43.0
+python-dotenv>=1.0
+httpx>=0.27
+pytest>=8.0
+argon2-cffi
