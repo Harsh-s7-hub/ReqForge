@@ -1,0 +1,27 @@
+
+# Python virtual environment
+venv/
+.venv/
+
+# Python cache
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+
+# Environment variables and secrets
+.env
+.env.*
+secrets/
+*.pem
+
+# Git
+.git/
+.gitignore
+
+# Development files
+.vscode/
+.idea/
+
+# Test and temporary files
+test_*.py

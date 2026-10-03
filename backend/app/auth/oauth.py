@@ -1,9 +1,14 @@
 import secrets
 from urllib.parse import urlencode
 import httpx
-from fastapi import APIRouter,HTTPException,Request
+from sqlalchemy.orm import Session
+from fastapi import APIRouter,HTTPException,Request,Depends
 from fastapi.responses import RedirectResponse,JSONResponse
 from app.core.config import settings
+from app.supabase_db.session import get_db
+
+from app.services.user_service import get_user_by_github_id,create_user,update_user
+from app.services.service_session import create_session
 
 router = APIRouter(
     prefix="/api/auth/github",
@@ -19,8 +24,8 @@ async def github_login():
     state = secrets.token_urlsafe(32)
 
     params = {
-        "client_id":settings.GITHUB_CLIENT_ID,
-        "redirect_uri":settings.GITHUB_REDIRECT_URI,
+        "client_id":settings.GITHUB_OAUTH_CLIENT_ID,
+        "redirect_uri":settings.GITHUB_OAUTH_REDIRECT_URI,
         "scope":"read:user user:email",
         "state":state,
     }
@@ -47,7 +52,8 @@ async def github_login():
 async def github_callback(
     request:Request,
     code:str,
-    state:str
+    state:str,
+    db:Session = Depends(get_db)
 ):
     stored_state = request.cookies.get("github_oauth_state")
     if (
@@ -60,15 +66,15 @@ async def github_callback(
         )
 
     async with httpx.AsyncClient(timeout=15.0) as client:
-
+ 
         token_response = await client.post(
             GITHUB_TOKEN_URL,
             headers={"Accept":"application/json"},
             data={
-                "client_id":settings.GITHUB_CLIENT_ID,
-                "client_secret":settings.GITHUB_CLIENT_SECRET,
+                "client_id":settings.GITHUB_OAUTH_CLIENT_ID,
+                "client_secret":settings.GITHUB_OAUTH_CLIENT_SECRET,
                 "code":code,
-                "redirect_uri":settings.GITHUB_REDIRECT_URI,
+                "redirect_uri":settings.GITHUB_OAUTH_REDIRECT_URI,
             },
         )
 
@@ -111,6 +117,26 @@ async def github_callback(
 
         github_user = user_response.json()
 
+        user = get_user_by_github_id(db,github_user["id"])
+
+        if user :
+            user = update_user(
+                db,
+                user,
+                github_user
+            )
+
+        else:
+            user = create_user(
+                db,github_user
+            )
+
+        session_id = create_session(
+            db,
+            user.id
+        )
+
+
         response = JSONResponse(
             content={
                 "message":"GitHub authentication successful",
@@ -124,6 +150,17 @@ async def github_callback(
                 }
             }
         )
+
+        response.set_cookie(
+            key="regforge_session",
+            value=session_id,
+            httponly=True,
+            secure=settings.ENVIRONMENT == "production",
+            samesite="lax",
+            max_age=60 * 60 * 24 * 7,
+            path="/"
+        )
+
 
         response.delete_cookie(
             key="github_oauth_state",

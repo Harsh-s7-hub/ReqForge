@@ -14,11 +14,19 @@ class Settings(BaseSettings):
 
     ENCRYPTION_KEY: str
 
-    GITHUB_CLIENT_ID: str
-    GITHUB_CLIENT_SECRET: str
-    GITHUB_REDIRECT_URI: str
+    GITHUB_OAUTH_CLIENT_ID: str
+    GITHUB_OAUTH_CLIENT_SECRET: str
+    GITHUB_OAUTH_REDIRECT_URI: str
     FRONTEND_URL: str 
 
+    SESSION_EXPIRY_DAYS : int
+
+    GITHUB_APP_ID: int
+    GITHUB_APP_CLIENT_ID: str
+    GITHUB_APP_CLIENT_SECRET: str
+    GITHUB_APP_PRIVATE_KEY_PATH: str
+
+    GITHUB_WEBHOOK_SECRET: str
 
     model_config = SettingsConfigDict(
         env_file = ".env",
@@ -32,7 +40,7 @@ class Settings(BaseSettings):
         ENCODED_DB_PASSWORD = quote_plus(self.DB_PASSWORD)
 
         return (
-            f"postgresql+psycopg2://"
+            f"postgresql+psycopg://"
             f"{ENCODED_DB_USER}:{ENCODED_DB_PASSWORD}@"
             f"{self.DB_HOST}:{self.DB_PORT}/"
             f"{self.DB_NAME}"
