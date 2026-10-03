@@ -6,7 +6,7 @@ from sqlalchemy import pool
 from alembic import context
 
 from app.supabase_db.base import Base
-from app.models import User, UserSession
+import app.models
 from app.core.config import settings
 from sqlalchemy import create_engine
 # this is the Alembic Config object, which provides
@@ -42,12 +42,15 @@ def run_migrations_offline() -> None:
     script output.
 
     """
-    url = config.get_main_option("sqlalchemy.url")
+    # url = config.get_main_option("sqlalchemy.url")
     context.configure(
-        url=url,
+        url=settings.DATABASE_URL,
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
+        compare_type=True,
+        compare_server_default=True
+        
     )
 
     with context.begin_transaction():
@@ -73,14 +76,19 @@ def run_migrations_online() -> None:
     )
    
 
-
-    with connectable.connect() as connection:
+    try:
+     with connectable.connect() as connection:
         context.configure(
-            connection=connection, target_metadata=target_metadata
+            connection=connection, 
+            target_metadata=target_metadata,
+            compare_type=True,
+            compare_server_default=True
         )
 
         with context.begin_transaction():
             context.run_migrations()
+    finally:
+        connectable.dispose()
 
 
 if context.is_offline_mode():

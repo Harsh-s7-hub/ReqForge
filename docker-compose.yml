@@ -1,6 +1,8 @@
 
 services:
   backend:
+    image: regforge-backend:1.0.0
+    
     build:
       context: ./backend
       dockerfile: Dockerfile
