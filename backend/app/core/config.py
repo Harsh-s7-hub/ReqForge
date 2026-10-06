@@ -20,7 +20,8 @@ class Settings(BaseSettings):
     FRONTEND_URL: str 
 
     SESSION_EXPIRY_DAYS : int
-
+    
+    GITHUB_APP_SLUG: str
     GITHUB_APP_ID: int
     GITHUB_APP_CLIENT_ID: str
     GITHUB_APP_CLIENT_SECRET: str

@@ -1,5 +1,5 @@
 import secrets
-from urllib.parse import urlencode
+from urllib.parse import urlencode,quote
 import httpx
 from sqlalchemy.orm import Session
 from fastapi import APIRouter,HTTPException,Request,Depends
@@ -137,19 +137,25 @@ async def github_callback(
         )
 
 
-        response = JSONResponse(
-            content={
-                "message":"GitHub authentication successful",
-                "authenticated":True,
-                "github_user":{
-                    "id":github_user.get("id"),
-                    "login":github_user.get("login"),
-                    "name":github_user.get("name"),
-                    "avatar_url":github_user.get("avatar_url"),
-                    "profile_url":github_user.get("html_url"),
-                }
-            }
+        # response = JSONResponse(
+        #     content={
+        #         "message":"GitHub authentication successful",
+        #         "authenticated":True,
+        #         "github_user":{
+        #             "id":github_user.get("id"),
+        #             "login":github_user.get("login"),
+        #             "name":github_user.get("name"),
+        #             "avatar_url":github_user.get("avatar_url"),
+        #             "profile_url":github_user.get("html_url"),
+        #         }
+        #     }
+        # )
+        username = quote(github_user["login"],safe="")
+        response = RedirectResponse(
+            url = f"{settings.FRONTEND_URL.rstrip('/')}/{username}",
+            status_code=302,
         )
+        
 
         response.set_cookie(
             key="regforge_session",

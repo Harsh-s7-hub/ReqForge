@@ -1,4 +1,3 @@
-
 from sqlalchemy.orm import Session
 
 from app.models.github_installation import GitHubInstallation
@@ -9,7 +8,6 @@ def get_user_repositories(
     db: Session,
     user_id: int,
 ) -> list[GitHubRepository]:
-
     repositories = (
         db.query(GitHubRepository)
         .join(
@@ -22,7 +20,10 @@ def get_user_repositories(
             GitHubInstallation.is_active.is_(True),
             GitHubRepository.is_active.is_(True),
         )
-        .order_by(GitHubRepository.full_name.asc())
+        .order_by(
+            GitHubRepository.last_github_activity_at.desc().nullslast(),
+            GitHubRepository.full_name.asc(),
+        )
         .all()
     )
 

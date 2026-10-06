@@ -87,6 +87,12 @@ class GitHubRepository(Base):
         nullable=False,
     )
 
+    last_github_activity_at: Mapped[datetime | None] = mapped_column(
+    DateTime(timezone=True),
+    nullable=True,
+    index=True
+    )
+
     installation = relationship(
         "GitHubInstallation",
         back_populates="repositories",

@@ -6,6 +6,7 @@ import jwt
 
 from app.core.config import settings
 
+
 GITHUB_API_URL = "https://api.github.com"
 
 
@@ -23,11 +24,10 @@ def load_private_key() -> str:
     return key_path.read_text(encoding="utf-8")
 
 
-
-
 def generate_app_jwt() -> str:
     app_id = settings.GITHUB_APP_ID
-    if app_id in (None, ""):
+
+    if not app_id:
         raise ValueError("GitHub App ID is not configured")
 
     now = int(time.time())
@@ -39,14 +39,37 @@ def generate_app_jwt() -> str:
     }
 
     return jwt.encode(
-        payload, 
-        load_private_key(), 
-        algorithm="RS256"
+        payload,
+        load_private_key(),
+        algorithm="RS256",
     )
 
+
+def get_installation_url() -> str:
+    """
+    Generate the GitHub App installation URL
+    using the slug configured in the backend.
+    """
+    app_slug = settings.GITHUB_APP_SLUG.strip()
+
+    if not app_slug:
+        raise ValueError("GitHub App slug is not configured")
+
+    return (
+        f"https://github.com/apps/{app_slug}/installations/new"
+    )
+
+
 async def generate_installation_token(
-        installation_id:int
+    installation_id: int,
 ) -> dict:
+    """
+    Generate an installation access token
+    for a specific GitHub App installation.
+    """
+    if installation_id <= 0:
+        raise ValueError("Invalid GitHub installation ID")
+
     app_jwt = generate_app_jwt()
 
     url = (
@@ -63,7 +86,7 @@ async def generate_installation_token(
     async with httpx.AsyncClient(timeout=20.0) as client:
         response = await client.post(
             url,
-            headers=headers
+            headers=headers,
         )
 
         response.raise_for_status()
