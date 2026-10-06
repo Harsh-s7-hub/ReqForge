@@ -8,5 +8,8 @@ export interface Project {
   repositoryUrl: string;
 
   repositoryAccessActive?: boolean;
+
+  currentAnalysisId?: number | null;
+
   createdAt?: string;
 }

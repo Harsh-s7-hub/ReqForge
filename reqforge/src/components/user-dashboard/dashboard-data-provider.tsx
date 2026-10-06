@@ -54,6 +54,7 @@ interface ApiProject {
   repository_name: string;
   repository_url: string;
   repository_access_active?: boolean;
+  current_analysis_id?: number | null;
   created_at?: string;
 }
 
@@ -70,13 +71,21 @@ interface DashboardDataContextValue {
   loading: boolean;
   refreshing: boolean;
   creatingProject: boolean;
+
   refreshDashboardData: () => Promise<void>;
+
   createProject: (
     data: CreateProjectInput,
   ) => Promise<Project>;
+
   deleteRepository: (
-  repositoryId: number
-) => Promise<void>;
+    repositoryId: number,
+  ) => Promise<void>;
+
+  updateProjectCurrentAnalysis: (
+    projectId: number,
+    analysisId: number,
+  ) => void;
 }
 
 const defaultGitHub: GitHubAppInfo = {
@@ -226,6 +235,10 @@ export function DashboardDataProvider({
               project.repository_url,
             repositoryAccessActive:
               project.repository_access_active,
+
+            currentAnalysisId:
+              project.current_analysis_id ?? null,
+
             createdAt:
               project.created_at,
           })),
@@ -313,6 +326,10 @@ export function DashboardDataProvider({
           repositoryAccessActive:
             apiProject.repository_access_active ??
             true,
+
+          currentAnalysisId:
+            apiProject.current_analysis_id ?? null,
+
           createdAt:
             apiProject.created_at,
         };
@@ -330,54 +347,77 @@ export function DashboardDataProvider({
     [],
   );
 
+  const updateProjectCurrentAnalysis =
+    useCallback(
+      (
+        projectId: number,
+        analysisId: number,
+      ) => {
+        setProjects((currentProjects) =>
+          currentProjects.map((project) =>
+            project.id === projectId
+              ? {
+                  ...project,
+                  currentAnalysisId:
+                    analysisId,
+                }
+              : project,
+          ),
+        );
+      },
+      [],
+    );
+
   const deleteRepository = useCallback(
-  async (repositoryId: number): Promise<void> => {
-    const response = await fetch(
-      `${API_URL}/api/github/repositories/${repositoryId}`,
-      {
-        method: "DELETE",
-        credentials: "include",
-        cache: "no-store",
+    async (
+      repositoryId: number,
+    ): Promise<void> => {
+      const response = await fetch(
+        `${API_URL}/api/github/repositories/${repositoryId}`,
+        {
+          method: "DELETE",
+          credentials: "include",
+          cache: "no-store",
+        },
+      );
+
+      let data: {
+        success?: boolean;
+        message?: string;
+        detail?: string;
+      };
+
+      try {
+        data = await response.json();
+      } catch {
+        throw new Error(
+          "The backend returned an invalid response.",
+        );
       }
-    );
 
-    let data: {
-      success?: boolean;
-      message?: string;
-      detail?: string;
-    };
+      if (!response.ok) {
+        throw new Error(
+          data.detail ||
+            "Unable to remove the repository.",
+        );
+      }
 
-    try {
-      data = await response.json();
-    } catch {
-      throw new Error(
-        "The backend returned an invalid response."
+      if (!data.success) {
+        throw new Error(
+          "Repository removal failed.",
+        );
+      }
+
+      setRepositories(
+        (currentRepositories) =>
+          currentRepositories.filter(
+            (repository) =>
+              repository.id !== repositoryId,
+          ),
       );
-    }
-
-    if (!response.ok) {
-      throw new Error(
-        data.detail ||
-          "Unable to remove the repository."
-      );
-    }
-
-    if (!data.success) {
-      throw new Error(
-        "Repository removal failed."
-      );
-    }
-
-    // Immediately remove it from the local dashboard state.
-    setRepositories((currentRepositories) =>
-      currentRepositories.filter(
-        (repository) =>
-          repository.id !== repositoryId
-      )
-    );
-  },
-  []
-);
+    },
+    [],
+  );
 
   useEffect(() => {
     loadDashboardData();
@@ -392,10 +432,15 @@ export function DashboardDataProvider({
         loading,
         refreshing,
         creatingProject,
+
         refreshDashboardData: () =>
           loadDashboardData(true),
+
         createProject,
+
         deleteRepository,
+
+        updateProjectCurrentAnalysis,
       }}
     >
       {children}

@@ -10,7 +10,7 @@ from app.services.github_installation_service import (
     fetch_installation_repositories,
 )
 from app.services.github_repositories_service import (
-    sync_github_repositories, reconcile_github_repositories,
+    reconcile_github_repositories,
 )
 from app.services.github_repository_query_service import (
     get_user_repositories,
@@ -105,6 +105,7 @@ def list_github_repositories(
         ],
     }
 
+
 @router.get("/setup")
 async def github_setup(
     installation_id: int,
@@ -122,7 +123,29 @@ async def github_setup(
             detail="Invalid GitHub installation ID.",
         )
 
-    # Find the existing installation.
+    # ---------------------------------------------------------
+    # Fetch the CURRENT repository list from GitHub first.
+    # GitHub is the source of truth.
+    # ---------------------------------------------------------
+    try:
+        repositories = await fetch_installation_repositories(
+            installation_id
+        )
+    except Exception as exc:
+        db.rollback()
+
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Unable to fetch the current GitHub "
+                "repositories."
+            ),
+        ) from exc
+
+    # ---------------------------------------------------------
+    # Find the installation using the CURRENT GitHub
+    # installation ID.
+    # ---------------------------------------------------------
     installation = (
         db.query(GitHubInstallation)
         .filter(
@@ -132,8 +155,10 @@ async def github_setup(
         .first()
     )
 
-    # If this installation already belongs to another
-    # RegForge user, do not allow it to be claimed.
+    # ---------------------------------------------------------
+    # If this installation belongs to another user,
+    # do not allow it to be claimed.
+    # ---------------------------------------------------------
     if installation:
         if installation.user_id != current_user.id:
             raise HTTPException(
@@ -148,33 +173,12 @@ async def github_setup(
 
         db.commit()
 
-    # Fetch the CURRENT repository list from GitHub.
-    #
-    # This happens even when the installation already exists.
-    # Therefore adding/removing repositories from the GitHub
-    # App installation page is reflected in RegForge.
-    try:
-        repositories = await fetch_installation_repositories(
-            installation_id
-        )
-
-    except Exception as exc:
-        db.rollback()
-
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                "Unable to fetch the current GitHub "
-                "repositories."
-            ),
-        ) from exc
-
-    # If the installation does not exist yet,
-    # create it for the currently authenticated user.
+    # ---------------------------------------------------------
+    # Create a new installation record if GitHub gave us
+    # a NEW installation ID.
+    # ---------------------------------------------------------
     if not installation:
-        account_login = (
-            current_user.github_username
-        )
+        account_login = current_user.github_username
         account_type = "User"
         account_id = None
 
@@ -211,11 +215,86 @@ async def github_setup(
         db.commit()
         db.refresh(installation)
 
+    # ---------------------------------------------------------
     # IMPORTANT:
     #
-    # Always reconcile the COMPLETE repository list.
+    # GitHub App installations can be recreated/reinstalled.
     #
-    # GitHub is treated as the source of truth.
+    # If the user previously had another installation,
+    # move repositories that still exist in the new GitHub
+    # installation to the new RegForge installation record.
+    #
+    # This keeps existing Projects working because Projects
+    # reference the GitHubRepository row, not the installation.
+    # ---------------------------------------------------------
+
+    github_repo_ids = {
+        repository.get("id")
+        for repository in repositories
+        if repository.get("id") is not None
+    }
+
+    if github_repo_ids:
+        old_installations = (
+            db.query(GitHubInstallation)
+            .filter(
+                GitHubInstallation.user_id == current_user.id,
+                GitHubInstallation.id != installation.id,
+            )
+            .all()
+        )
+
+        if old_installations:
+            old_installation_ids = [
+                old.id
+                for old in old_installations
+            ]
+
+            existing_repositories = (
+                db.query(GitHubRepository)
+                .filter(
+                    GitHubRepository.github_installation_id.in_(
+                        old_installation_ids
+                    ),
+                    GitHubRepository.github_repo_id.in_(
+                        github_repo_ids
+                    ),
+                )
+                .all()
+            )
+
+            for repository in existing_repositories:
+                repository.github_installation_id = (
+                    installation.id
+                )
+                repository.is_active = True
+
+    # ---------------------------------------------------------
+    # The current installation is now the active installation
+    # for this RegForge user.
+    #
+    # Old installations are deactivated only after their
+    # repositories have been migrated.
+    # ---------------------------------------------------------
+
+    old_installations = (
+        db.query(GitHubInstallation)
+        .filter(
+            GitHubInstallation.user_id == current_user.id,
+            GitHubInstallation.id != installation.id,
+            GitHubInstallation.is_active.is_(True),
+        )
+        .all()
+    )
+
+    for old_installation in old_installations:
+        old_installation.is_active = False
+
+    db.commit()
+
+    # ---------------------------------------------------------
+    # Reconcile the COMPLETE repository list.
+    # ---------------------------------------------------------
     sync_message = reconcile_github_repositories(
         db=db,
         installation_id=installation_id,

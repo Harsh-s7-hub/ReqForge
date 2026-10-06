@@ -1,13 +1,13 @@
 
 services:
   backend:
-    image: regforge-backend:1.0.2
+    image: reqforge-backend:1.2.0
     
     build:
       context: ./backend
       dockerfile: Dockerfile
 
-    container_name: regforge-backend
+    container_name: reqforge-backend
 
     restart: unless-stopped
 

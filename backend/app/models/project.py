@@ -1,4 +1,3 @@
-
 from datetime import datetime
 
 from sqlalchemy import (
@@ -36,6 +35,17 @@ class Project(Base):
         index=True,
     )
 
+    # Latest/current analysis for this project.
+    # Nullable because a project can exist before its first analysis.
+    current_analysis_id: Mapped[int | None] = mapped_column(
+        ForeignKey(
+            "project_analysis.id",
+            ondelete="SET NULL",
+        ),
+        nullable=True,
+        index=True,
+    )
+
     name: Mapped[str] = mapped_column(
         String(255),
         nullable=False,
@@ -60,4 +70,8 @@ class Project(Base):
     )
 
 
-Index("ix_projects_user_repository", Project.user_id, Project.repository_id)
+Index(
+    "ix_projects_user_repository",
+    Project.user_id,
+    Project.repository_id,
+)

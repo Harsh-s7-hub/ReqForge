@@ -8,6 +8,7 @@ from app.models.user_session import UserSession
 from app.core.config import settings
 from typing import Final
 
+
 SESSION_EXPIRY_DAYS : Final[int] = settings.SESSION_EXPIRY_DAYS
 
 def generate_session_id() -> str:

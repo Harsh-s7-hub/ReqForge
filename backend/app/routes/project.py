@@ -1,4 +1,3 @@
-
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
@@ -52,6 +51,8 @@ def create_new_project(
             "repository_id": repository.id,
             "repository_name": repository.full_name,
             "repository_url": repository.html_url,
+            "repository_access_active": repository.is_active,
+            "current_analysis_id": project.current_analysis_id,
             "created_at": project.created_at,
         },
     }
@@ -81,6 +82,7 @@ def list_projects(
                 "repository_name": repository.full_name,
                 "repository_url": repository.html_url,
                 "repository_access_active": repository.is_active,
+                "current_analysis_id": project.current_analysis_id,
                 "created_at": project.created_at,
             }
             for project, repository in results

@@ -10,8 +10,9 @@ import {
   Trash2,
 } from "lucide-react";
 
-import { Project } from "./types";
 import { GithubIcon } from "@/components/icons/github-icon";
+
+import { Project } from "./types";
 
 interface ProjectCardProps {
   project: Project;
@@ -71,6 +72,24 @@ export function ProjectCard({
     };
   }, [menuOpen]);
 
+  const handleOpen = () => {
+    onOpen?.(project);
+  };
+
+  const handleCardKeyDown = (
+    event: React.KeyboardEvent<HTMLDivElement>,
+  ) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      handleOpen();
+    }
+
+    if (event.key === " ") {
+      event.preventDefault();
+      handleOpen();
+    }
+  };
+
   const handleEdit = () => {
     setMenuOpen(false);
     onEdit?.(project);
@@ -83,15 +102,15 @@ export function ProjectCard({
 
   return (
     <div
-      className="group relative overflow-hidden rounded-2xl border border-[#EAE8F0] bg-white p-5 transition-all duration-200 hover:-translate-y-0.5 hover:border-[#DCD5F5] hover:shadow-[0_8px_30px_rgba(42,35,70,0.08)]"
+      role="button"
+      tabIndex={0}
+      onClick={handleOpen}
+      onKeyDown={handleCardKeyDown}
+      className="group relative cursor-pointer overflow-hidden rounded-2xl border border-[#EAE8F0] bg-white p-5 transition-all duration-200 hover:-translate-y-0.5 hover:border-[#DCD5F5] hover:shadow-[0_8px_30px_rgba(42,35,70,0.08)] focus:outline-none focus:ring-2 focus:ring-[#F0EAFF]"
     >
       {/* Top section */}
       <div className="flex items-start justify-between gap-4">
-        <button
-          type="button"
-          onClick={() => onOpen?.(project)}
-          className="flex min-w-0 items-center gap-3 text-left"
-        >
+        <div className="flex min-w-0 items-center gap-3 text-left">
           <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#F0EAFF] text-[#7547E8]">
             <FolderKanban
               size={21}
@@ -108,20 +127,27 @@ export function ProjectCard({
               Project
             </p>
           </div>
-        </button>
+        </div>
 
         {/* Project actions */}
         <div
           ref={menuRef}
           className="relative shrink-0"
+          onClick={(event) =>
+            event.stopPropagation()
+          }
+          onKeyDown={(event) =>
+            event.stopPropagation()
+          }
         >
           <button
             type="button"
             aria-label="Project options"
             aria-expanded={menuOpen}
-            onClick={(event) => {
-              event.stopPropagation();
-              setMenuOpen((current) => !current);
+            onClick={() => {
+              setMenuOpen(
+                (current) => !current,
+              );
             }}
             className={`flex h-8 w-8 items-center justify-center rounded-lg transition-colors ${
               menuOpen
@@ -133,12 +159,7 @@ export function ProjectCard({
           </button>
 
           {menuOpen && (
-            <div
-              className="absolute right-0 top-10 z-50 w-36 overflow-hidden rounded-xl border border-[#EAE8F0] bg-white p-1.5 shadow-[0_10px_35px_rgba(35,25,65,0.12)]"
-              onClick={(event) =>
-                event.stopPropagation()
-              }
-            >
+            <div className="absolute right-0 top-10 z-50 w-36 overflow-hidden rounded-xl border border-[#EAE8F0] bg-white p-1.5 shadow-[0_10px_35px_rgba(35,25,65,0.12)]">
               {/* Edit */}
               <button
                 type="button"
@@ -185,7 +206,8 @@ export function ProjectCard({
           {project.repositoryName}
         </span>
 
-        {project.repositoryAccessActive === false && (
+        {project.repositoryAccessActive ===
+          false && (
           <span className="shrink-0 rounded-md bg-[#FFF1F1] px-2 py-1 text-[10px] font-medium text-[#D94A4A]">
             Access lost
           </span>

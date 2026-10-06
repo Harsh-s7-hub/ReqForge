@@ -28,7 +28,9 @@ def generate_app_jwt() -> str:
     app_id = settings.GITHUB_APP_ID
 
     if not app_id:
-        raise ValueError("GitHub App ID is not configured")
+        raise ValueError(
+            "GitHub App ID is not configured"
+        )
 
     now = int(time.time())
 
@@ -53,22 +55,28 @@ def get_installation_url() -> str:
     app_slug = settings.GITHUB_APP_SLUG.strip()
 
     if not app_slug:
-        raise ValueError("GitHub App slug is not configured")
+        raise ValueError(
+            "GitHub App slug is not configured"
+        )
 
     return (
-        f"https://github.com/apps/{app_slug}/installations/new"
+        f"https://github.com/apps/"
+        f"{app_slug}/installations/new"
     )
 
 
 async def generate_installation_token(
     installation_id: int,
-) -> dict:
+) -> str:
     """
     Generate an installation access token
     for a specific GitHub App installation.
     """
+
     if installation_id <= 0:
-        raise ValueError("Invalid GitHub installation ID")
+        raise ValueError(
+            "Invalid GitHub installation ID"
+        )
 
     app_jwt = generate_app_jwt()
 
@@ -83,7 +91,9 @@ async def generate_installation_token(
         "X-GitHub-Api-Version": "2022-11-28",
     }
 
-    async with httpx.AsyncClient(timeout=20.0) as client:
+    async with httpx.AsyncClient(
+        timeout=20.0
+    ) as client:
         response = await client.post(
             url,
             headers=headers,
@@ -91,4 +101,13 @@ async def generate_installation_token(
 
         response.raise_for_status()
 
-        return response.json()
+        data = response.json()
+
+        token = data.get("token")
+
+        if not token:
+            raise RuntimeError(
+                "GitHub did not return an installation access token."
+            )
+
+        return token
