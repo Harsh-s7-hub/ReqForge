@@ -30,6 +30,10 @@ class GraphBuilder:
     def __init__(self, client: Neo4jClient):
         self.client = client
 
+    # ==========================================================
+    # Constraints
+    # ==========================================================
+
     def create_constraints(self) -> None:
         """
         Create uniqueness constraints required by RegForge.
@@ -66,6 +70,10 @@ class GraphBuilder:
         for query in queries:
             self.client.execute_write(query)
 
+    # ==========================================================
+    # Project
+    # ==========================================================
+
     def create_project(
         self,
         project_id: int,
@@ -79,6 +87,7 @@ class GraphBuilder:
         MERGE (p:Project {
             project_id: $project_id
         })
+
         SET p.name = $name
         """
 
@@ -89,6 +98,10 @@ class GraphBuilder:
                 "name": name,
             },
         )
+
+    # ==========================================================
+    # Analysis
+    # ==========================================================
 
     def create_analysis(
         self,
@@ -128,6 +141,10 @@ class GraphBuilder:
             },
         )
 
+    # ==========================================================
+    # Files
+    # ==========================================================
+
     def create_file(
         self,
         project_id: int,
@@ -157,7 +174,8 @@ class GraphBuilder:
             f.project_id = $project_id,
             f.analysis_id = $analysis_id,
             f.path = $path,
-            f.language = $language
+            f.language = $language,
+            f.name = $name
 
         MERGE (a)-[:CONTAINS]->(f)
         """
@@ -170,8 +188,13 @@ class GraphBuilder:
                 "analysis_id": analysis_id,
                 "path": file.path,
                 "language": file.language,
+                "name": file.path.rsplit("/", 1)[-1],
             },
         )
+
+    # ==========================================================
+    # Symbols
+    # ==========================================================
 
     def create_symbol(
         self,
@@ -198,6 +221,12 @@ class GraphBuilder:
             symbol,
         )
 
+        relationship_type = (
+            "DEFINES_CLASS"
+            if symbol_type == "Class"
+            else "DEFINES_FUNCTION"
+        )
+
         query = f"""
         MATCH (file:File {{
             node_id: $file_node_id
@@ -216,7 +245,7 @@ class GraphBuilder:
             symbol.end_line = $end_line,
             symbol.symbol_type = $symbol_type
 
-        MERGE (file)-[:DEFINES_{symbol_type.upper()}]->(symbol)
+        MERGE (file)-[:{relationship_type}]->(symbol)
         """
 
         self.client.execute_write(
@@ -237,6 +266,10 @@ class GraphBuilder:
                 "symbol_type": symbol.symbol_type,
             },
         )
+
+    # ==========================================================
+    # Class -> Method
+    # ==========================================================
 
     def create_method_relationship(
         self,
@@ -287,6 +320,10 @@ class GraphBuilder:
             },
         )
 
+    # ==========================================================
+    # File Dependencies
+    # ==========================================================
+
     def create_dependency(
         self,
         project_id: int,
@@ -294,47 +331,265 @@ class GraphBuilder:
         dependency: Dependency,
     ) -> None:
         """
-        Create an IMPORTS relationship between files when
-        the target is an internal repository path.
+        Create an IMPORTS relationship between two files.
+
+        The dependency target is resolved against repository-relative
+        file paths already stored in Neo4j.
         """
+
+        source_path = (
+            dependency.source_file
+            .replace("\\", "/")
+            .strip("/")
+        )
+
+        target = (
+            dependency.target
+            .replace("\\", "/")
+            .strip()
+        )
+
+        if not source_path or not target:
+            return
 
         source_node_id = self._file_node_id(
             project_id,
             analysis_id,
-            dependency.source_file,
+            source_path,
         )
+
+        candidate_paths = self._dependency_candidates(
+            source_path=source_path,
+            target=target,
+        )
+
+        if not candidate_paths:
+            return
 
         query = """
         MATCH (source:File {
             node_id: $source_node_id
         })
 
-        MATCH (target:File {
-            analysis_id: $analysis_id
-        })
+        MATCH (target:File)
         WHERE
-            target.path = $target_path
-            OR target.path = $target_path_py
-            OR target.path = $target_path_js
-            OR target.path = $target_path_index
+            target.project_id = $project_id
+            AND target.analysis_id = $analysis_id
+            AND target.path IN $candidate_paths
 
         MERGE (source)-[:IMPORTS]->(target)
         """
-
-        target = dependency.target
 
         self.client.execute_write(
             query,
             {
                 "source_node_id": source_node_id,
+                "project_id": project_id,
                 "analysis_id": analysis_id,
-                "target_path": target,
-                "target_path_py": f"{target}.py",
-                "target_path_js": f"{target}.js",
-                "target_path_js": f"{target}.js",
-                "target_path_index": f"{target}/index.ts",
+                "candidate_paths": candidate_paths,
             },
         )
+
+    @staticmethod
+    def _dependency_candidates(
+        source_path: str,
+        target: str,
+    ) -> list[str]:
+        """
+        Generate repository-relative candidate paths for an import.
+
+        Supports:
+
+        Python:
+            import services.auth
+            from services.auth import login
+            from .auth import login
+            from ..services import auth
+
+        JavaScript:
+            import auth from "./auth"
+            import { User } from "./models/user"
+
+        TypeScript:
+            import auth from "./auth"
+            import { User } from "./models/user"
+
+        Also supports:
+
+            .py
+            .js
+            .jsx
+            .ts
+            .tsx
+            .java
+            index files
+            __init__.py packages
+        """
+
+        target = target.strip().replace("\\", "/")
+
+        if not target:
+            return []
+
+        source = source_path.replace("\\", "/")
+
+        source_dir = (
+            source.rsplit("/", 1)[0]
+            if "/" in source
+            else ""
+        )
+
+        candidates: list[str] = []
+
+        def add(path: str) -> None:
+            path = path.replace("\\", "/").strip()
+
+            while path.startswith("./"):
+                path = path[2:]
+
+            path = path.lstrip("/")
+
+            if path and path not in candidates:
+                candidates.append(path)
+
+        # ------------------------------------------------------
+        # Normalize target
+        # ------------------------------------------------------
+
+        normalized = target
+
+        # Remove surrounding quotes.
+        if (
+            len(normalized) >= 2
+            and normalized[0] in {"'", '"'}
+            and normalized[-1] == normalized[0]
+        ):
+            normalized = normalized[1:-1]
+
+        normalized = normalized.strip()
+
+        # ------------------------------------------------------
+        # Relative imports
+        # ------------------------------------------------------
+
+        if normalized.startswith("."):
+            relative = normalized
+
+            dot_count = 0
+
+            while relative.startswith("."):
+                dot_count += 1
+                relative = relative[1:]
+
+            relative = relative.lstrip("/")
+
+            base_parts = (
+                source_dir.split("/")
+                if source_dir
+                else []
+            )
+
+            # "." means current directory.
+            #
+            # ".." means one directory up.
+            #
+            # "..." means two directories up.
+            levels_up = max(dot_count - 1, 0)
+
+            if levels_up:
+                if levels_up <= len(base_parts):
+                    base_parts = base_parts[
+                        :-levels_up
+                    ]
+                else:
+                    base_parts = []
+
+            if relative:
+                relative_path = "/".join(
+                    [
+                        *base_parts,
+                        relative,
+                    ]
+                )
+            else:
+                relative_path = "/".join(
+                    base_parts
+                )
+
+            add(relative_path)
+
+        else:
+            add(normalized)
+
+        # ------------------------------------------------------
+        # Python dotted module
+        #
+        # services.auth
+        #
+        # becomes:
+        #
+        # services/auth
+        # ------------------------------------------------------
+
+        if not normalized.startswith("."):
+            dotted = normalized.replace(
+                ".",
+                "/",
+            )
+
+            add(dotted)
+
+        # ------------------------------------------------------
+        # Generate file candidates
+        # ------------------------------------------------------
+
+        base_candidates = list(candidates)
+
+        extensions = [
+            ".py",
+            ".js",
+            ".jsx",
+            ".ts",
+            ".tsx",
+            ".java",
+        ]
+
+        for base in base_candidates:
+
+            # Exact path.
+            add(base)
+
+            # File extensions.
+            for extension in extensions:
+                if not base.endswith(extension):
+                    add(
+                        f"{base}{extension}"
+                    )
+
+            # JavaScript / TypeScript index files.
+            add(
+                f"{base}/index.js"
+            )
+            add(
+                f"{base}/index.jsx"
+            )
+            add(
+                f"{base}/index.ts"
+            )
+            add(
+                f"{base}/index.tsx"
+            )
+
+            # Python package.
+            add(
+                f"{base}/__init__.py"
+            )
+
+        return candidates
+
+    # ==========================================================
+    # Clear Analysis
+    # ==========================================================
 
     def clear_analysis(
         self,
@@ -359,13 +614,16 @@ class GraphBuilder:
             },
         )
 
+    # ==========================================================
+    # ID Helpers
+    # ==========================================================
+
     @staticmethod
     def _file_node_id(
         project_id: int,
         analysis_id: int,
         file_path: str,
     ) -> str:
-
         return (
             f"file:"
             f"{project_id}:"
@@ -380,7 +638,6 @@ class GraphBuilder:
         file_path: str,
         symbol: Symbol,
     ) -> str:
-
         return (
             f"{symbol.symbol_type}:"
             f"{project_id}:"

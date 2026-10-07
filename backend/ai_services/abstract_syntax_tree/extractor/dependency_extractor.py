@@ -38,6 +38,7 @@ def extract_dependencies(
             "javascript",
             "typescript",
             "tsx",
+            "jsx",
         }:
             targets = _extract_javascript_imports(node)
 
@@ -45,6 +46,9 @@ def extract_dependencies(
             targets = _extract_java_imports(node)
 
         for target in targets:
+
+            if not target:
+                continue
 
             dependencies.append(
                 Dependency(
@@ -67,6 +71,12 @@ def _extract_python_imports(
     node: ASTNode,
 ) -> list[str]:
 
+    # ----------------------------------------------------------
+    # import foo
+    # import foo.bar
+    # import foo as f
+    # ----------------------------------------------------------
+
     if node.node_type == "import_statement":
 
         if not node.text:
@@ -74,26 +84,33 @@ def _extract_python_imports(
 
         text = node.text.strip()
 
-        # Example:
-        # import requests
-        # import os
-        # import app.database
+        if not text.startswith("import "):
+            return []
 
-        text = text.removeprefix("import ").strip()
+        text = text[len("import "):].strip()
 
-        imports = []
+        imports: list[str] = []
 
         for item in text.split(","):
 
             item = item.strip()
 
             if " as " in item:
-                item = item.split(" as ")[0].strip()
+                item = item.split(
+                    " as ",
+                    1,
+                )[0].strip()
 
             if item:
                 imports.append(item)
 
         return imports
+
+    # ----------------------------------------------------------
+    # from foo.bar import baz
+    # from .foo import baz
+    # from ..services import auth
+    # ----------------------------------------------------------
 
     if node.node_type == "import_from_statement":
 
@@ -102,14 +119,10 @@ def _extract_python_imports(
 
         text = node.text.strip()
 
-        # Example:
-        # from app.database import db
-        # from services.auth import login
-
         if not text.startswith("from "):
             return []
 
-        remainder = text[5:]
+        remainder = text[len("from "):]
 
         if " import " not in remainder:
             return []
@@ -119,8 +132,7 @@ def _extract_python_imports(
             1,
         )[0].strip()
 
-        if module:
-            return [module]
+        return [module] if module else []
 
     return []
 
@@ -140,10 +152,10 @@ def _extract_javascript_imports(
 
     text = node.text.strip()
 
-    # Example:
+    # ----------------------------------------------------------
     # import auth from "./auth";
     # import { User } from "./models/user";
-    # import "./setup";
+    # ----------------------------------------------------------
 
     if " from " in text:
 
@@ -152,16 +164,27 @@ def _extract_javascript_imports(
             1,
         )[1].strip()
 
-        return [_clean_import_target(target)]
+        target = _clean_import_target(
+            target
+        )
 
-    # Side-effect import:
+        return [target] if target else []
+
+    # ----------------------------------------------------------
     # import "./setup";
+    # ----------------------------------------------------------
 
     if text.startswith("import "):
 
-        target = text[len("import "):].strip()
+        target = text[
+            len("import "):
+        ].strip()
 
-        return [_clean_import_target(target)]
+        target = _clean_import_target(
+            target
+        )
+
+        return [target] if target else []
 
     return []
 
@@ -178,21 +201,17 @@ def _extract_java_imports(
 
     text = node.text.strip()
 
-    # Example:
-    # import java.util.List;
-    # import com.example.User;
-
     if not text.startswith("import "):
         return []
 
-    target = text[len("import "):].strip()
+    target = text[
+        len("import "):
+    ].strip()
 
     target = target.rstrip(";").strip()
 
-    # Remove static keyword if present.
-    target = target.removeprefix(
-        "static "
-    ).strip()
+    if target.startswith("static "):
+        target = target[len("static "):].strip()
 
     return [target] if target else []
 
@@ -202,12 +221,8 @@ def _clean_import_target(
 ) -> str:
 
     target = target.strip()
+    target = target.rstrip(";").strip()
 
-    target = target.rstrip(";")
-
-    target = target.strip()
-
-    # Remove quotes.
     if (
         len(target) >= 2
         and target[0] in {"'", '"'}
@@ -215,7 +230,7 @@ def _clean_import_target(
     ):
         target = target[1:-1]
 
-    return target
+    return target.strip()
 
 
 def extract_dependencies_from_file(

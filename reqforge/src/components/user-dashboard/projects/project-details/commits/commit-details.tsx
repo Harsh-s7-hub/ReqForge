@@ -46,11 +46,14 @@ export function CommitDetails({
     );
   }
 
-  const formattedDate = formatCommitDate(
-    commit.created_at,
-  );
+  const formattedDate =
+    formatCommitDate(commit.created_at);
 
   const analyzed = Boolean(analysisId);
+
+  const author =
+    commit.author?.trim() ||
+    "Unknown author";
 
   return (
     <div className="rounded-2xl border border-[#EAE8F0] bg-white p-5">
@@ -60,18 +63,21 @@ export function CommitDetails({
           {commit.avatar_url ? (
             <img
               src={commit.avatar_url}
-              alt=""
-              className="h-9 w-9 rounded-full object-cover"
+              alt={`${author} avatar`}
+              className="h-10 w-10 shrink-0 rounded-full object-cover ring-1 ring-[#EAE8F0]"
             />
           ) : (
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#F0EAFF]">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#F0EAFF]">
               <UserRound className="h-4 w-4 text-[#7547E8]" />
             </div>
           )}
 
           <div className="min-w-0">
-            <p className="text-sm font-semibold text-[#191725]">
-              {commit.author}
+            <p
+              className="truncate text-sm font-semibold text-[#191725]"
+              title={author}
+            >
+              {author}
             </p>
 
             <p className="mt-0.5 text-[11px] text-[#9A96A6]">
@@ -222,7 +228,7 @@ function formatCommitDate(
   const date = new Date(value);
 
   if (Number.isNaN(date.getTime())) {
-    return value;
+    return value || "Unknown date";
   }
 
   return new Intl.DateTimeFormat(

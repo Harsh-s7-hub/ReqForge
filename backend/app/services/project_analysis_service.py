@@ -1,16 +1,21 @@
 from datetime import datetime, timezone
 
 import hashlib
+
 from pathlib import Path
 
 from sqlalchemy import func
+
 from sqlalchemy.orm import Session
 
 from app.models.analysis_file import AnalysisFile
+
 from app.models.analysis_language_statistics import (
     AnalysisLanguageStatistics,
 )
+
 from app.models.project import Project
+
 from app.models.project_analysis import ProjectAnalysis
 
 from app.services.github_repository_snapshot_service import (
@@ -20,16 +25,20 @@ from app.services.github_repository_snapshot_service import (
 from ai_services.abstract_syntax_tree.analyzer.repository_analyzer import (
     analyze_repository,
 )
+
 from ai_services.abstract_syntax_tree.extractor.dependency_extractor import (
     extract_dependencies,
 )
+
 from ai_services.abstract_syntax_tree.extractor.symbol_extractor import (
     extract_symbols,
 )
+
 from ai_services.graph.graph_builder import (
     GraphBuilder,
     GraphFile,
 )
+
 from ai_services.graph.neo4j_client import Neo4jClient
 
 
@@ -61,6 +70,10 @@ class ProjectAnalysisService:
         self.snapshot_service = (
             GitHubRepositorySnapshotService()
         )
+
+    # ==========================================================
+    # Main Analysis
+    # ==========================================================
 
     def analyze_project(
         self,
@@ -189,6 +202,7 @@ class ProjectAnalysisService:
             # --------------------------------------------------
 
             analysis.status = "completed"
+
             analysis.completed_at = datetime.now(
                 timezone.utc
             )
@@ -199,6 +213,7 @@ class ProjectAnalysisService:
             # Historical commit analysis must remain available
             # through its own analysis record without replacing
             # the project's current analysis.
+
             if update_current:
                 project.current_analysis_id = analysis.id
 
@@ -206,6 +221,7 @@ class ProjectAnalysisService:
 
             # Refresh both ORM objects so their state reflects
             # the committed database state.
+
             self.db.refresh(analysis)
             self.db.refresh(project)
 
@@ -217,6 +233,7 @@ class ProjectAnalysisService:
 
             # The analysis object was already persisted by
             # _create_analysis(), so restore its failed state.
+
             analysis.status = "failed"
 
             self.db.add(analysis)
@@ -282,7 +299,9 @@ class ProjectAnalysisService:
         )
 
         self.db.add(analysis)
+
         self.db.commit()
+
         self.db.refresh(analysis)
 
         return analysis
@@ -296,13 +315,17 @@ class ProjectAnalysisService:
 
         for file_ast in analysis_result["files"]:
 
-            file_path = Path(file_ast.path)
+            file_path = Path(
+                file_ast.path
+            )
 
             relative_path = file_path.relative_to(
                 snapshot_root
             ).as_posix()
 
-            full_path = snapshot_root / relative_path
+            full_path = (
+                snapshot_root / relative_path
+            )
 
             file_size = full_path.stat().st_size
 
@@ -358,7 +381,9 @@ class ProjectAnalysisService:
 
             stats = language_data[language]
 
-            full_path = Path(file_ast.path)
+            full_path = Path(
+                file_ast.path
+            )
 
             stats["files"] += 1
 
@@ -407,6 +432,38 @@ class ProjectAnalysisService:
         project_id: int,
         analysis_id: int,
     ) -> None:
+        """
+        Build the Neo4j graph in multiple passes.
+
+        IMPORTANT:
+
+        We intentionally do NOT create dependencies while
+        processing each individual file.
+
+        Instead:
+
+            PASS 1
+                Create every File node.
+
+            PASS 2
+                Create every Class / Function node.
+
+            PASS 3
+                Create Class -> Function relationships.
+
+            PASS 4
+                Create File -> File IMPORTS relationships.
+
+        This guarantees that dependency target files already
+        exist before IMPORTS relationships are created.
+        """
+
+        graph_files: list[GraphFile] = []
+
+        # ------------------------------------------------------
+        # PASS 0
+        # Normalize files and extract all graph information.
+        # ------------------------------------------------------
 
         for file_ast in analysis_result["files"]:
 
@@ -422,6 +479,7 @@ class ProjectAnalysisService:
 
             # Normalize the AST path so Neo4j stores
             # repository-relative paths.
+
             file_ast.path = relative_path
 
             symbols = extract_symbols(
@@ -433,6 +491,7 @@ class ProjectAnalysisService:
             )
 
             # Normalize dependency source path.
+
             for dependency in dependencies:
                 dependency.source_file = (
                     relative_path
@@ -445,30 +504,67 @@ class ProjectAnalysisService:
                 dependencies=dependencies,
             )
 
+            graph_files.append(
+                graph_file
+            )
+
+        # ------------------------------------------------------
+        # PASS 1
+        # Create ALL File nodes first.
+        # ------------------------------------------------------
+
+        for graph_file in graph_files:
+
             graph_builder.create_file(
                 project_id=project_id,
                 analysis_id=analysis_id,
                 file=graph_file,
             )
 
-            for symbol in symbols:
+        # ------------------------------------------------------
+        # PASS 2
+        # Create ALL Class and Function nodes.
+        # ------------------------------------------------------
+
+        for graph_file in graph_files:
+
+            for symbol in graph_file.symbols:
 
                 graph_builder.create_symbol(
                     project_id=project_id,
                     analysis_id=analysis_id,
-                    file_path=relative_path,
+                    file_path=graph_file.path,
                     symbol=symbol,
                 )
 
+        # ------------------------------------------------------
+        # PASS 3
+        # Create Class -> Function relationships.
+        # ------------------------------------------------------
+
+        for graph_file in graph_files:
+
+            for symbol in graph_file.symbols:
+
                 if symbol.parent_name:
+
                     graph_builder.create_method_relationship(
                         project_id=project_id,
                         analysis_id=analysis_id,
-                        file_path=relative_path,
+                        file_path=graph_file.path,
                         symbol=symbol,
                     )
 
-            for dependency in dependencies:
+        # ------------------------------------------------------
+        # PASS 4
+        # Create File -> File IMPORTS relationships.
+        #
+        # At this point every File node already exists.
+        # ------------------------------------------------------
+
+        for graph_file in graph_files:
+
+            for dependency in graph_file.dependencies:
 
                 graph_builder.create_dependency(
                     project_id=project_id,
@@ -496,7 +592,10 @@ class ProjectAnalysisService:
                 "GitHub repository full_name is required."
             )
 
-        parts = full_name.split("/", 1)
+        parts = full_name.split(
+            "/",
+            1,
+        )
 
         if len(parts) != 2:
             raise ValueError(
@@ -512,6 +611,7 @@ class ProjectAnalysisService:
     ) -> int:
 
         try:
+
             with file_path.open(
                 "rb"
             ) as file:
@@ -531,7 +631,9 @@ class ProjectAnalysisService:
 
         sha256 = hashlib.sha256()
 
-        with file_path.open("rb") as file:
+        with file_path.open(
+            "rb"
+        ) as file:
 
             while chunk := file.read(
                 1024 * 1024
