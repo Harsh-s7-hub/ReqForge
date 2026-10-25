@@ -26,8 +26,9 @@ async def fetch_installation_repositories(
     Handles GitHub API pagination.
     """
 
-    token_data = await generate_installation_token(installation_id)
-    access_token = token_data.get("token")
+    access_token = await generate_installation_token(
+        installation_id
+    )
 
     if not access_token:
         raise ValueError(
@@ -72,7 +73,6 @@ async def fetch_installation_repositories(
             page += 1
 
     return repositories
-
 
 async def handle_installation_event(
     db: Session,

@@ -1,3 +1,4 @@
+import re
 from dataclasses import dataclass
 
 from ai_services.abstract_syntax_tree.models.ast_models import (
@@ -50,14 +51,22 @@ def extract_dependencies(
             if not target:
                 continue
 
-            dependencies.append(
-                Dependency(
-                    source_file=file_ast.path,
-                    target=target,
-                    dependency_type="IMPORTS",
-                    line=node.start_line,
-                )
+            dependency = Dependency(
+                source_file=file_ast.path,
+                target=target,
+                dependency_type="IMPORTS",
+                line=node.start_line,
             )
+
+            print(
+                f"[DEPENDENCY] "
+                f"{dependency.source_file} "
+                f"-> "
+                f"{dependency.target} "
+                f"(line {dependency.line})"
+            )
+
+            dependencies.append(dependency)
 
         for child in node.children:
             walk(child)
@@ -141,52 +150,89 @@ def _extract_javascript_imports(
     node: ASTNode,
 ) -> list[str]:
 
-    if node.node_type not in {
-        "import_statement",
-        "import_declaration",
-    }:
-        return []
-
     if not node.text:
         return []
 
     text = node.text.strip()
 
+    targets: list[str] = []
+
     # ----------------------------------------------------------
+    # ES Modules
+    #
     # import auth from "./auth";
     # import { User } from "./models/user";
-    # ----------------------------------------------------------
-
-    if " from " in text:
-
-        target = text.split(
-            " from ",
-            1,
-        )[1].strip()
-
-        target = _clean_import_target(
-            target
-        )
-
-        return [target] if target else []
-
-    # ----------------------------------------------------------
     # import "./setup";
     # ----------------------------------------------------------
 
-    if text.startswith("import "):
+    if node.node_type in {
+        "import_statement",
+        "import_declaration",
+    }:
 
-        target = text[
-            len("import "):
-        ].strip()
+        if " from " in text:
 
-        target = _clean_import_target(
-            target
-        )
+            target = text.split(
+                " from ",
+                1,
+            )[1].strip()
 
-        return [target] if target else []
+            target = _clean_import_target(target)
 
-    return []
+            if target:
+                targets.append(target)
+
+        elif text.startswith("import "):
+
+            target = text[
+                len("import "):
+            ].strip()
+
+            target = _clean_import_target(target)
+
+            if target:
+                targets.append(target)
+
+    # ----------------------------------------------------------
+    # CommonJS
+    #
+    # const auth = require("./auth");
+    # const group = require("./group");
+    # require("./setup");
+    # ----------------------------------------------------------
+
+    require_matches = re.findall(
+        r'require\s*\(\s*["\']([^"\']+)["\']\s*\)',
+        text,
+    )
+
+    for target in require_matches:
+
+        target = _clean_import_target(target)
+
+        if target and target not in targets:
+            targets.append(target)
+
+    # ----------------------------------------------------------
+    # Dynamic imports
+    #
+    # import("./auth");
+    # const module = await import("./module");
+    # ----------------------------------------------------------
+
+    dynamic_import_matches = re.findall(
+        r'import\s*\(\s*["\']([^"\']+)["\']\s*\)',
+        text,
+    )
+
+    for target in dynamic_import_matches:
+
+        target = _clean_import_target(target)
+
+        if target and target not in targets:
+            targets.append(target)
+
+    return targets
 
 
 def _extract_java_imports(
