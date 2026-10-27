@@ -1,0 +1,45 @@
+services:
+  redis:
+    image: redis:7.4-alpine
+    container_name: reqforge-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - reqforge_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  documentation-worker:
+    image: reqforge-documentation-worker:1.0.0
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file:
+      - ../../.env
+    environment:
+      PYTHONPATH: /app
+      REDIS_URL: redis://redis:6379/0
+      OLLAMA_BASE_URL: http://host.docker.internal:11434
+    volumes:
+      - ../../secrets:/app/secrets:ro
+    command:
+      [
+        "celery",
+        "-A",
+        "app.workers.celery_app.celery_app",
+        "worker",
+        "--loglevel=INFO",
+        "--queues=documentation",
+      ]
+    depends_on:
+      redis:
+        condition: service_healthy
+
+volumes:
+  reqforge_redis_data:

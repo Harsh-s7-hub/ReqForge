@@ -34,3 +34,6 @@ pytest>=8.0
 
 sentence-transformers>=4.1.0
 transformers>=4.51.0
+
+# Background documentation generation
+celery[redis]>=5.4

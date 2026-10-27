@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useParams } from "next/navigation";
 
 import { useDashboardData } from "@/components/user-dashboard/dashboard-data-provider";
 
@@ -14,6 +15,7 @@ import {
 import { SourceGraph } from "./graph/source-graph";
 import { ProjectHeader } from "./project-header";
 import { ProjectOverview } from "./project-overview";
+import { GenerateDocumentationButton } from "@/components/user-dashboard/documentations/generate-documentation-button";
 
 interface ProjectDetailsPageProps {
   projectId: number;
@@ -22,6 +24,7 @@ interface ProjectDetailsPageProps {
 export function ProjectDetailsPage({
   projectId,
 }: ProjectDetailsPageProps) {
+  const params = useParams<{ "github-username": string }>();
   const [analysisId, setAnalysisId] =
     useState<number | null>(null);
 
@@ -50,15 +53,17 @@ export function ProjectDetailsPage({
    * project's latest/current analysis.
    */
   useEffect(() => {
-    if (project?.currentAnalysisId) {
-      setAnalysisId(
-        project.currentAnalysisId,
-      );
-    } else {
-      setAnalysisId(null);
-      setSelectedCommitSha(null);
-      setSelectedCommit(null);
-    }
+    const timer = window.setTimeout(() => {
+      if (project?.currentAnalysisId) {
+        setAnalysisId(project.currentAnalysisId);
+      } else {
+        setAnalysisId(null);
+        setSelectedCommitSha(null);
+        setSelectedCommit(null);
+      }
+    }, 0);
+
+    return () => window.clearTimeout(timer);
   }, [project?.currentAnalysisId]);
 
   if (loading) {
@@ -157,12 +162,14 @@ export function ProjectDetailsPage({
     <div className="flex h-full min-h-0 flex-col gap-5 overflow-y-auto pr-1">
       {/* Project Header */}
       <ProjectHeader project={project}>
-        <AnalyzeButton
-          projectId={project.id}
-          onAnalysisComplete={
-            handleLatestAnalysis
-          }
-        />
+        <div className="flex items-start gap-3">
+          <GenerateDocumentationButton
+            username={params["github-username"]}
+            projectId={project.id}
+            analysisId={analysisId}
+          />
+          <AnalyzeButton projectId={project.id} onAnalysisComplete={handleLatestAnalysis} />
+        </div>
       </ProjectHeader>
 
       {/* Project Overview */}

@@ -59,7 +59,7 @@ export const dashboardNavigation: DashboardNavGroup[] = [
     items: [
       {
         label: "Documentation",
-        href: "/documentation",
+        href: "/documentations",
         icon: FileText,
         subtitle: "Generate and maintain project documentation with AI.",
       },

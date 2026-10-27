@@ -8,5 +8,20 @@ from app.models.analysis_file import AnalysisFile
 from app.models.analysis_language_statistics import (
     AnalysisLanguageStatistics,
 )
+from app.models.project_documentation import ProjectDocumentation
+from app.models.documentation_version import DocumentationVersion
+from app.models.documentation_generation_job import DocumentationGenerationJob
 
-__all__ = ["User", "UserSession","GitHubInstallation","GitHubRepository","Project","ProjectAnalysis","AnalysisFile","AnalysisLanguageStatistics"]
+__all__ = [
+    "User",
+    "UserSession",
+    "GitHubInstallation",
+    "GitHubRepository",
+    "Project",
+    "ProjectAnalysis",
+    "AnalysisFile",
+    "AnalysisLanguageStatistics",
+    "ProjectDocumentation",
+    "DocumentationVersion",
+    "DocumentationGenerationJob",
+]

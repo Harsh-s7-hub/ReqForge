@@ -32,6 +32,11 @@ class Settings(BaseSettings):
     QDRANT_URL:str
     QDRANT_COLLECTION: str
 
+    REDIS_URL: str = "redis://localhost:6379/0"
+    OLLAMA_BASE_URL: str = "http://localhost:11434"
+    OLLAMA_MODEL: str = "qwen2.5-coder:7b"
+    OLLAMA_GENERATION_TIMEOUT_SECONDS: int = 900
+
     model_config = SettingsConfigDict(
         env_file = ".env",
         env_file_encoding = "utf-8",
