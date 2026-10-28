@@ -16,6 +16,9 @@ from app.services.github_installation_service import (
 from app.services.github_repositories_service import (
     sync_github_repositories,
 )
+from app.documentation.services.documentation_stale_service import (
+    DocumentationStaleService,
+)
 from app.supabase_db.session import SessionLocal
 
 
@@ -92,12 +95,69 @@ def process_push_event(payload: dict):
                 "was not updated."
             )
 
+        # Check and mark documentation as stale if commits changed (excluding RegForge's own commits)
+        head_commit = payload.get("head_commit") or {}
+        commit_message = head_commit.get("message")
+        committer = head_commit.get("committer") or {}
+        committer_name = committer.get("name")
+        head_commit_sha = payload.get("after") or head_commit.get("id")
+        repo_data = payload.get("repository") or {}
+        github_repo_id = repo_data.get("id")
+
+        if github_repo_id and head_commit_sha:
+            stale_count = DocumentationStaleService.mark_stale_from_push(
+                db,
+                github_repo_id=github_repo_id,
+                head_commit_sha=head_commit_sha,
+                commit_message=commit_message,
+                committer_name=committer_name,
+            )
+            if stale_count > 0:
+                logger.info(
+                    "Marked %d project document(s) as STALE for repo ID: %s",
+                    stale_count,
+                    github_repo_id,
+                )
+
     except Exception:
         db.rollback()
         logger.exception("Push activity processing failed.")
 
     finally:
         db.close()
+
+
+def process_pull_request_event(payload: dict):
+    """
+    Process GitHub pull request events outside the webhook request.
+    Marks project documentation as stale when a PR is merged into main.
+    """
+    action = payload.get("action")
+    pr = payload.get("pull_request") or {}
+    is_merged = pr.get("merged", False)
+    merge_commit_sha = pr.get("merge_commit_sha")
+    repo_data = payload.get("repository") or {}
+    github_repo_id = repo_data.get("id")
+
+    if action == "closed" and is_merged and merge_commit_sha and github_repo_id:
+        db = SessionLocal()
+        try:
+            stale_count = DocumentationStaleService.mark_stale_from_push(
+                db,
+                github_repo_id=github_repo_id,
+                head_commit_sha=merge_commit_sha,
+            )
+            if stale_count > 0:
+                logger.info(
+                    "PR merged: Marked %d project document(s) as STALE for repo ID: %s",
+                    stale_count,
+                    github_repo_id,
+                )
+        except Exception:
+            db.rollback()
+            logger.exception("Pull request stale processing failed.")
+        finally:
+            db.close()
 
 
 @router.post("/github")
@@ -161,6 +221,12 @@ async def github_webhook(
     elif x_github_event == "push":
         background_tasks.add_task(
             process_push_event,
+            payload,
+        )
+
+    elif x_github_event == "pull_request":
+        background_tasks.add_task(
+            process_pull_request_event,
             payload,
         )
 

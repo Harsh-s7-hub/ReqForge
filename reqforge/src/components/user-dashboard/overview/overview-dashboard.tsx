@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 
 import { useDashboardData } from "@/components/user-dashboard/dashboard-data-provider";
@@ -8,8 +9,18 @@ import { OverviewMetrics } from "./overview-metrics";
 import { WorkspaceActions } from "./workspace-actions";
 import { ProjectsPanel } from "../projects/projects-panel";
 import { RepositoriesPanel } from "../repositories/repositories-panel";
-import { AgentTelemetry } from "./right-sidebar/agent-telemetry";
+import { AgentTelemetry, type AgentActivity } from "./right-sidebar/agent-telemetry";
 import { QuickSetupGuide } from "./right-sidebar/quick-setup-guide";
+
+interface OverviewTelemetryData {
+  active_agents: number;
+  total_executions: number;
+  ai_models_configured: boolean;
+  first_workflow_completed: boolean;
+  recent_activities: AgentActivity[];
+}
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001";
 
 export function OverviewDashboard() {
   const router = useRouter();
@@ -23,6 +34,30 @@ export function OverviewDashboard() {
   const repositoriesRoute = githubUsername
     ? `/${githubUsername}/repositories`
     : "/repositories";
+
+  const [telemetry, setTelemetry] = useState<OverviewTelemetryData | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+    fetch(`${API_URL}/api/overview/telemetry`, {
+      credentials: "include",
+      cache: "no-store",
+    })
+      .then((res) => {
+        if (!res.ok) throw new Error("Telemetry fetch failed");
+        return res.json();
+      })
+      .then((data: OverviewTelemetryData) => {
+        if (mounted) setTelemetry(data);
+      })
+      .catch((err) => {
+        console.warn("Could not load overview telemetry:", err);
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   /*
    * Get GitHub and repository data from the shared
@@ -71,11 +106,20 @@ export function OverviewDashboard() {
         </div>
 
         <aside className="min-w-0 space-y-5">
-          <AgentTelemetry />
+          <AgentTelemetry
+            activities={telemetry?.recent_activities || []}
+            activeAgents={telemetry?.active_agents || 0}
+            totalExecutions={telemetry?.total_executions || 0}
+          />
 
           <QuickSetupGuide
             githubConnected={githubInstalled}
             hasRepository={repositories.length > 0}
+            aiModelsConfigured={telemetry?.ai_models_configured ?? false}
+            firstWorkflowCompleted={
+              telemetry?.first_workflow_completed ??
+              projects.some((p) => Boolean(p.currentAnalysisId))
+            }
           />
         </aside>
       </div>

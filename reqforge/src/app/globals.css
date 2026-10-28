@@ -370,26 +370,34 @@
 }
 
 
-/* Hide scrollbars but preserve scrolling */
+/* Hide scrollbars globally but preserve full scrolling capability */
 html,
-body {
-  scrollbar-width: none; /* Firefox */
-  -ms-overflow-style: none; /* Internet Explorer / Edge legacy */
+body,
+*,
+*::before,
+*::after {
+  scrollbar-width: none !important; /* Firefox */
+  -ms-overflow-style: none !important; /* Internet Explorer / Edge */
 }
 
+*::-webkit-scrollbar,
 html::-webkit-scrollbar,
 body::-webkit-scrollbar {
-  display: none; /* Chrome, Safari, Edge */
+  display: none !important; /* Chrome, Safari, Opera, Chromium Edge */
+  width: 0 !important;
+  height: 0 !important;
 }
 
-/* Reusable class for scrollable containers */
+/* Reusable utility class for scrollable containers */
 .hide-scrollbar {
-  scrollbar-width: none;
-  -ms-overflow-style: none;
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
 }
 
 .hide-scrollbar::-webkit-scrollbar {
-  display: none;
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
 }
 
 /* Disable text selection across the application */

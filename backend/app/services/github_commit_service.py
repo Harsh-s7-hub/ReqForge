@@ -165,3 +165,57 @@ class GitHubCommitService:
             "created_at": created_at,
             "html_url": commit.get("html_url"),
         }
+
+    def commit_file(
+        self,
+        owner: str,
+        repository: str,
+        access_token: str,
+        file_path: str,
+        content: str,
+        commit_message: str,
+        branch: str | None = None,
+    ) -> dict[str, Any]:
+        """
+        Create or update a file in a GitHub repository via the GitHub Contents API.
+        """
+        import base64
+
+        url = f"{GITHUB_API_URL}/repos/{owner}/{repository}/contents/{file_path.lstrip('/')}"
+        headers = {
+            "Authorization": f"Bearer {access_token}",
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+            "User-Agent": "RegForge",
+        }
+
+        params: dict[str, Any] = {}
+        if branch:
+            params["ref"] = branch
+
+        existing_sha = None
+        try:
+            get_resp = httpx.get(url, headers=headers, params=params, timeout=15.0)
+            if get_resp.status_code == 200:
+                existing_sha = get_resp.json().get("sha")
+        except Exception:
+            pass
+
+        encoded_content = base64.b64encode(content.encode("utf-8")).decode("utf-8")
+        payload: dict[str, Any] = {
+            "message": commit_message,
+            "content": encoded_content,
+        }
+        if branch:
+            payload["branch"] = branch
+        if existing_sha:
+            payload["sha"] = existing_sha
+
+        put_resp = httpx.put(url, headers=headers, json=payload, timeout=30.0)
+        put_resp.raise_for_status()
+        data = put_resp.json()
+        return {
+            "commit_sha": data.get("commit", {}).get("sha", ""),
+            "html_url": data.get("content", {}).get("html_url", ""),
+            "file_path": file_path,
+        }

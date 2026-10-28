@@ -11,6 +11,7 @@ from app.models.analysis_language_statistics import (
 from app.models.project_documentation import ProjectDocumentation
 from app.models.documentation_version import DocumentationVersion
 from app.models.documentation_generation_job import DocumentationGenerationJob
+from app.models.ai_model_configuration import AIModelConfiguration
 
 __all__ = [
     "User",
@@ -24,4 +25,5 @@ __all__ = [
     "ProjectDocumentation",
     "DocumentationVersion",
     "DocumentationGenerationJob",
+    "AIModelConfiguration",
 ]

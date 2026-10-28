@@ -28,11 +28,15 @@ interface SetupStep {
 interface QuickSetupGuideProps {
   githubConnected: boolean;
   hasRepository: boolean;
+  aiModelsConfigured?: boolean;
+  firstWorkflowCompleted?: boolean;
 }
 
 export function QuickSetupGuide({
   githubConnected,
   hasRepository,
+  aiModelsConfigured = false,
+  firstWorkflowCompleted = false,
 }: QuickSetupGuideProps) {
   const pathname = usePathname();
 
@@ -43,15 +47,6 @@ export function QuickSetupGuide({
   const dashboardBasePath = username
     ? `/${username}`
     : "";
-
-  /*
-   * These two steps are not backed by database state yet.
-   *
-   * AI model configuration and first workflow execution
-   * will become dynamic once their backend state exists.
-   */
-  const aiModelsConfigured = false;
-  const firstWorkflowCompleted = false;
 
   const setupSteps: SetupStep[] = [
     {
@@ -99,7 +94,7 @@ export function QuickSetupGuide({
       actionLabel: firstWorkflowCompleted
         ? "Completed"
         : "Get started",
-      href: "/documentation",
+      href: "/documentations",
       completed: firstWorkflowCompleted,
     },
   ];

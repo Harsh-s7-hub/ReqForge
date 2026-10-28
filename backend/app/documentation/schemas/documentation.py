@@ -51,3 +51,29 @@ class DocumentationCatalogItem(BaseModel):
 
 class DocumentationCatalogResponse(BaseModel):
     documents: list[DocumentationCatalogItem]
+
+
+class DocumentationCommitRequest(BaseModel):
+    commit_message: str = Field(
+        default="docs: update README.md via RegForge AI"
+    )
+    file_path: str = Field(default="README.md")
+    branch: str | None = None
+
+
+class DocumentationCommitResponse(BaseModel):
+    commit_sha: str
+    html_url: str
+    file_path: str
+    branch: str
+
+
+class DocumentationStatusResponse(BaseModel):
+    has_documentation: bool
+    documentation_id: int | None = None
+    latest_version_id: int | None = None
+    version_number: int | None = None
+    status: str
+    is_stale: bool = False
+    source_commit_sha: str | None = None
+    current_commit_sha: str | None = None

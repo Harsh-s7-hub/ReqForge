@@ -46,3 +46,33 @@ export interface DocumentationCatalogItem {
   status: string;
   versions: DocumentationCatalogVersion[];
 }
+
+export interface CommitDocumentationPayload {
+  commit_message: string;
+  file_path?: string;
+  branch?: string;
+}
+
+export interface CommitDocumentationResult {
+  commit_sha: string;
+  html_url: string;
+  file_path: string;
+  branch: string;
+}
+
+export interface ProjectDocumentationStatus {
+  has_documentation: boolean;
+  documentation_id: number | null;
+  latest_version_id: number | null;
+  version_number: number | null;
+  status: "active" | "stale" | "queued" | "generating" | "none";
+  is_stale: boolean;
+  source_commit_sha: string | null;
+  current_commit_sha: string | null;
+}
+
+export interface ProjectActionTokenResponse {
+  project_id: number;
+  token: string;
+  token_prefix: string;
+}

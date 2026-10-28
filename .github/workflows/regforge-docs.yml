@@ -1,0 +1,158 @@
+name: RegForge Documentation CI/CD
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  # -------------------------------------------------------------------------
+  # Job 1: PR Documentation & Architecture Check
+  # Evaluates code changes in incoming PRs and posts a review bot summary
+  # -------------------------------------------------------------------------
+  check-pr-docs:
+    name: Check Documentation Status (PR)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout PR Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Inspect Changed Code Files
+        id: diff
+        run: |
+          # Compare PR branch against target base
+          git fetch origin ${{ github.base_ref }} --depth=1
+          CHANGED_FILES_JSON=$(git diff --name-only origin/${{ github.base_ref }}...HEAD | jq -R -s -c 'split("\n")[:-1]')
+          echo "files=${CHANGED_FILES_JSON}" >> $GITHUB_OUTPUT
+
+      - name: Query RegForge Documentation Check API
+        id: regforge_check
+        env:
+          REGFORGE_URL: ${{ secrets.REGFORGE_API_URL || 'http://127.0.0.1:8001' }}
+          REGFORGE_TOKEN: ${{ secrets.REGFORGE_PROJECT_TOKEN }}
+        run: |
+          if [ -z "$REGFORGE_TOKEN" ]; then
+            echo "::warning::REGFORGE_PROJECT_TOKEN secret not configured in repository. Using step summary."
+            echo "status=skipped" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          PAYLOAD=$(jq -n \
+            --arg sha "${{ github.event.pull_request.head.sha }}" \
+            --argjson pr "${{ github.event.pull_request.number }}" \
+            --arg base "${{ github.base_ref }}" \
+            --arg head "${{ github.head_ref }}" \
+            --argjson files '${{ steps.diff.outputs.files }}' \
+            '{commit_sha: $sha, pr_number: $pr, base_ref: $base, head_ref: $head, changed_files: $files}')
+
+          RESPONSE=$(curl -s -X POST "${REGFORGE_URL}/api/actions/documentation/check" \
+            -H "Authorization: Bearer ${REGFORGE_TOKEN}" \
+            -H "Content-Type: application/json" \
+            -d "${PAYLOAD}")
+
+          echo "Response: ${RESPONSE}"
+          SUMMARY=$(echo "${RESPONSE}" | jq -r '.summary_markdown // empty')
+          IS_STALE=$(echo "${RESPONSE}" | jq -r '.is_stale // false')
+
+          # Save to multiline environment file for summary
+          {
+            echo "summary<<EOF"
+            echo "${SUMMARY}"
+            echo "EOF"
+          } >> $GITHUB_OUTPUT
+
+          echo "is_stale=${IS_STALE}" >> $GITHUB_OUTPUT
+
+      - name: Publish GitHub Step Summary
+        if: steps.regforge_check.outputs.summary != ''
+        run: |
+          echo "${{ steps.regforge_check.outputs.summary }}" >> $GITHUB_STEP_SUMMARY
+
+      - name: Post PR Comment
+        uses: actions/github-script@v7
+        if: steps.regforge_check.outputs.summary != ''
+        with:
+          script: |
+            const summary = process.env.SUMMARY_TEXT;
+            if (!summary) return;
+
+            const marker = '<!-- regforge-doc-check-comment -->';
+            const body = `${marker}\n${summary}`;
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+
+            const existing = comments.find(c => c.body.includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body: body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: body,
+              });
+            }
+        env:
+          SUMMARY_TEXT: ${{ steps.regforge_check.outputs.summary }}
+
+  # -------------------------------------------------------------------------
+  # Job 2: Auto-Sync Documentation on Merge / Push to Main
+  # Automatically triggers AI synthesis for the new commit
+  # -------------------------------------------------------------------------
+  sync-main-docs:
+    name: Auto-Sync Documentation (Main)
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Trigger RegForge AI Documentation Sync
+        env:
+          REGFORGE_URL: ${{ secrets.REGFORGE_API_URL || 'http://127.0.0.1:8001' }}
+          REGFORGE_TOKEN: ${{ secrets.REGFORGE_PROJECT_TOKEN }}
+          COMMIT_SHA: ${{ github.sha }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          if [ -z "$REGFORGE_TOKEN" ]; then
+            echo "::notice::REGFORGE_PROJECT_TOKEN not set. RegForge GitHub App Webhook will handle background stale tracking."
+            exit 0
+          fi
+
+          echo "Triggering automated RegForge documentation sync for commit ${COMMIT_SHA}..."
+          RESPONSE=$(curl -s -X POST "${REGFORGE_URL}/api/actions/documentation/sync" \
+            -H "Authorization: Bearer ${REGFORGE_TOKEN}" \
+            -H "Content-Type: application/json" \
+            -d "{\"commit_sha\": \"${COMMIT_SHA}\", \"branch\": \"${REF_NAME}\"}")
+
+          echo "Sync Result: ${RESPONSE}"
+          JOB_ID=$(echo "${RESPONSE}" | jq -r '.job_id // empty')
+          VERSION_NUM=$(echo "${RESPONSE}" | jq -r '.version_number // empty')
+
+          if [ -n "$JOB_ID" ]; then
+            echo "### ✅ RegForge Documentation Generation Queued" >> $GITHUB_STEP_SUMMARY
+            echo "- **Version:** \`v${VERSION_NUM}\`" >> $GITHUB_STEP_SUMMARY
+            echo "- **Job ID:** \`${JOB_ID}\`" >> $GITHUB_STEP_SUMMARY
+            echo "- **Commit:** \`${COMMIT_SHA}\`" >> $GITHUB_STEP_SUMMARY
+            echo "Documentation synthesis is running in Celery worker." >> $GITHUB_STEP_SUMMARY
+          fi

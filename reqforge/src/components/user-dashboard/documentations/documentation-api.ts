@@ -1,7 +1,11 @@
 import type {
+  CommitDocumentationPayload,
+  CommitDocumentationResult,
+  DocumentationCatalogItem,
   DocumentationGenerationResult,
   DocumentationVersion,
-  DocumentationCatalogItem,
+  ProjectActionTokenResponse,
+  ProjectDocumentationStatus,
 } from "./types";
 
 const API_URL =
@@ -69,4 +73,41 @@ export async function saveDocumentationContent(
     },
   );
   return parseResponse<DocumentationVersion>(response);
+}
+
+export async function commitDocumentationVersion(
+  projectId: number,
+  versionId: number,
+  payload: CommitDocumentationPayload,
+): Promise<CommitDocumentationResult> {
+  const response = await fetch(
+    `${API_URL}/api/projects/${projectId}/documentation/versions/${versionId}/commit`,
+    {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    },
+  );
+  return parseResponse<CommitDocumentationResult>(response);
+}
+
+export async function getProjectDocumentationStatus(
+  projectId: number,
+): Promise<ProjectDocumentationStatus> {
+  const response = await fetch(
+    `${API_URL}/api/projects/${projectId}/documentation/status`,
+    { credentials: "include", cache: "no-store" },
+  );
+  return parseResponse<ProjectDocumentationStatus>(response);
+}
+
+export async function getProjectActionToken(
+  projectId: number,
+): Promise<ProjectActionTokenResponse> {
+  const response = await fetch(
+    `${API_URL}/api/projects/${projectId}/action-token`,
+    { credentials: "include", cache: "no-store" },
+  );
+  return parseResponse<ProjectActionTokenResponse>(response);
 }

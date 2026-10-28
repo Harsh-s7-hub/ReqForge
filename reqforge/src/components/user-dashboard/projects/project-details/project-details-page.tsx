@@ -16,6 +16,8 @@ import { SourceGraph } from "./graph/source-graph";
 import { ProjectHeader } from "./project-header";
 import { ProjectOverview } from "./project-overview";
 import { GenerateDocumentationButton } from "@/components/user-dashboard/documentations/generate-documentation-button";
+import { GitHubActionDialog } from "./github-action-dialog";
+import type { ProjectDocumentationStatus } from "@/components/user-dashboard/documentations/types";
 
 interface ProjectDetailsPageProps {
   projectId: number;
@@ -33,6 +35,12 @@ export function ProjectDetailsPage({
 
   const [selectedCommit, setSelectedCommit] =
     useState<Commit | null>(null);
+
+  const [docStatus, setDocStatus] =
+    useState<ProjectDocumentationStatus | null>(null);
+
+  const [actionDialogOpen, setActionDialogOpen] =
+    useState<boolean>(false);
 
   const {
     projects,
@@ -167,10 +175,45 @@ export function ProjectDetailsPage({
             username={params["github-username"]}
             projectId={project.id}
             analysisId={analysisId}
+            onStatusChange={setDocStatus}
           />
           <AnalyzeButton projectId={project.id} onAnalysisComplete={handleLatestAnalysis} />
+          <div className="flex flex-col items-end gap-2">
+            <button
+              type="button"
+              onClick={() => setActionDialogOpen(true)}
+              className="inline-flex items-center gap-2 rounded-lg border border-[#EAE8F0] bg-white px-4 py-2.5 text-sm font-medium text-[#191725] transition hover:bg-[#FAF9FC] hover:border-[#D6D3E6]"
+              title="Configure GitHub Actions CI & Automation"
+            >
+              <svg
+                className="h-4 w-4 shrink-0 text-[#57606a]"
+                viewBox="0 0 16 16"
+                fill="currentColor"
+                aria-hidden="true"
+              >
+                <path d="M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0ZM1.5 8a6.5 6.5 0 1 0 13 0 6.5 6.5 0 0 0-13 0Zm4.879-2.773 4.264 2.559a.25.25 0 0 1 0 .428l-4.264 2.559A.25.25 0 0 1 6 10.559V5.442a.25.25 0 0 1 .379-.215Z" />
+              </svg>
+              <span>Actions</span>
+            </button>
+          </div>
         </div>
       </ProjectHeader>
+
+      {/* Stale Documentation Alert Banner */}
+      {docStatus?.is_stale && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50/80 px-5 py-3.5 text-xs text-amber-900 shadow-sm backdrop-blur">
+          <div className="flex items-center gap-2.5">
+            <span className="h-2.5 w-2.5 rounded-full bg-amber-500 animate-pulse" />
+            <p>
+              <strong className="font-semibold text-amber-950">Documentation is Stale:</strong>{" "}
+              New repository commits have been analyzed since version {docStatus.version_number ?? 1} was generated.
+            </p>
+          </div>
+          <span className="font-mono text-[11px] font-medium text-amber-800">
+            Current: {docStatus.current_commit_sha?.slice(0, 7) ?? "latest"} · Doc: {docStatus.source_commit_sha?.slice(0, 7) ?? "v1"}
+          </span>
+        </div>
+      )}
 
       {/* Project Overview */}
       <ProjectOverview
@@ -212,6 +255,15 @@ export function ProjectDetailsPage({
          isCurrent={
     analysisId === project.currentAnalysisId
   }
+      />
+
+      {/* GitHub Actions CI Setup Dialog */}
+      <GitHubActionDialog
+        projectId={project.id}
+        projectName={project.name}
+        repositoryName={project.repositoryName}
+        isOpen={actionDialogOpen}
+        onClose={() => setActionDialogOpen(false)}
       />
     </div>
   );

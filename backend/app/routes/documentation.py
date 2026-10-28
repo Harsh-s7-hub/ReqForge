@@ -2,14 +2,24 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from app.documentation.schemas.documentation import (
+    DocumentationCatalogResponse,
+    DocumentationCommitRequest,
+    DocumentationCommitResponse,
     DocumentationContentUpdate,
     DocumentationGenerationResponse,
+    DocumentationStatusResponse,
     DocumentationVersionResponse,
-    DocumentationCatalogResponse,
 )
+from app.auth.github_app import generate_installation_token
 from app.documentation.services.documentation_service import DocumentationService
+from datetime import datetime, timezone
+from app.documentation.services.documentation_stale_service import DocumentationStaleService
+from app.models.github_repositories import GitHubRepository
 from app.models.project import Project
 from app.models.project_analysis import ProjectAnalysis
+from app.models.project_documentation import ProjectDocumentation
+from app.services.github_commit_service import GitHubCommitService
+from app.services.project_token_service import ProjectTokenService
 from app.services.service_session import get_current_user
 from app.supabase_db.session import get_db
 from app.workers.documentation.dispatch import dispatch_generation_job
@@ -74,6 +84,34 @@ def generate_documentation(
     )
 
 
+@router.get(
+    "/{project_id}/documentation/status",
+    response_model=DocumentationStatusResponse,
+)
+def get_documentation_status(
+    project_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    _get_owned_project(db, request, project_id)
+    return DocumentationStaleService.get_status(db, project_id)
+
+
+@router.get("/{project_id}/action-token")
+def get_project_action_token(
+    project_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    project = _get_owned_project(db, request, project_id)
+    token = ProjectTokenService.generate_token(project)
+    return {
+        "project_id": project.id,
+        "token": token,
+        "token_prefix": "rf_proj",
+    }
+
+
 @router.get("/{project_id}/documentation/versions", response_model=list[DocumentationVersionResponse])
 def list_documentation_versions(project_id: int, request: Request, db: Session = Depends(get_db)):
     _get_owned_project(db, request, project_id)
@@ -106,6 +144,79 @@ def update_documentation_version(
         return service.save_edit(version, payload.content)
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.post(
+    "/{project_id}/documentation/versions/{version_id}/commit",
+    response_model=DocumentationCommitResponse,
+)
+async def commit_documentation_version(
+    project_id: int,
+    version_id: int,
+    payload: DocumentationCommitRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    project = _get_owned_project(db, request, project_id)
+    service = DocumentationService(db)
+    version = service.get_version(project_id, version_id)
+    if not version:
+        raise HTTPException(status_code=404, detail="Documentation version not found.")
+    if not version.content:
+        raise HTTPException(status_code=400, detail="Documentation content is empty.")
+
+    repository = (
+        db.query(GitHubRepository)
+        .filter(GitHubRepository.id == project.repository_id)
+        .first()
+    )
+    if not repository or not repository.full_name or "/" not in repository.full_name:
+        raise HTTPException(status_code=400, detail="Invalid GitHub repository information.")
+
+    owner, repository_name = repository.full_name.split("/", 1)
+    if not repository.installation or not repository.installation.installation_id:
+        raise HTTPException(status_code=400, detail="GitHub App installation not available.")
+
+    try:
+        access_token = await generate_installation_token(repository.installation.installation_id)
+        commit_service = GitHubCommitService()
+        target_branch = payload.branch or repository.default_branch or "main"
+        result = commit_service.commit_file(
+            owner=owner,
+            repository=repository_name,
+            access_token=access_token,
+            file_path=payload.file_path,
+            content=version.content,
+            commit_message=payload.commit_message,
+            branch=target_branch,
+        )
+
+        # Update ProjectDocumentation to record our commit and prevent false-positive stale alerts
+        doc = (
+            db.query(ProjectDocumentation)
+            .filter(
+                ProjectDocumentation.project_id == project.id,
+                ProjectDocumentation.id == version.documentation_id,
+            )
+            .first()
+        )
+        if doc:
+            doc.committed_commit_sha = result["commit_sha"]
+            doc.committed_at = datetime.now(timezone.utc)
+            doc.source_commit_sha = result["commit_sha"]
+            doc.status = "active"
+            db.commit()
+
+        return DocumentationCommitResponse(
+            commit_sha=result["commit_sha"],
+            html_url=result["html_url"],
+            file_path=result["file_path"],
+            branch=target_branch,
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to commit to GitHub: {exc}") from exc
 
 
 @catalog_router.get("/catalog", response_model=DocumentationCatalogResponse)

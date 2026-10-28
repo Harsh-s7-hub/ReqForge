@@ -1,7 +1,8 @@
 <!-- COMMANDS -->
 <!-- FRONTEND : npm run dev -->
 <!-- BACKEND : uvicorn app.main:app --reload --host 127.0.0.1 --port 8001 -->
-
+<!-- WORKER : .\venv\Scripts\celery.exe -A app.workers.celery_app.celery_app worker --loglevel=INFO --queues=documentation -P solo
+ -->
 
 # RegForge --- Project Context and Handoff Guide for AI Agents
 
@@ -9,9 +10,9 @@
 RegForge, its intended architecture, reported implementation status, and
 immediate next steps. Read this before changing code.
 
-**Last context update:** 27 October 2026
+**Last context update:** 29 October 2026
 **Previously used repository root:** `D:\ReqForge`
-**Current handoff status:** Qdrant and local embeddings have been implemented and tested in standalone tests; documentation generation is still in design/discussion and has not been implemented.
+**Current handoff status:** Documentation generation & review pipeline, stale tracking with self-commit loop prevention, GitHub Actions CI automation, dynamic overview telemetry, AI Models & Inference Engines console, global hidden scrollbars, dynamic hyperparameters and system prompts across FastAPI & Celery worker, and Supabase PostgreSQL persistence (table `ai_model_configurations`, Alembic head `c7e2f1a9b4d8`) are fully implemented and verified.
 
 > Important: This document summarizes prior user reports and decisions.
 > It is not a substitute for inspecting the current repository. Confirm
@@ -90,19 +91,71 @@ against the actual repository.
 - A GitHub repository indexing service exists at `backend/app/services/github_code_indexing_service.py`.
 - A real GitHub repository indexing test successfully indexed 7 eligible files and 8 chunks for `Harsh-s7-hub/medify_backend` (`github_repo_id=1247530583`, default branch `main`; test used internal repository DB ID 26).
 - A standalone Qdrant semantic retrieval test indexed 3 sample chunks and returned relevant results for sample queries.
-- These are reported results from the prior session, not a guarantee that the current checkout still matches them. Inspect and rerun tests before relying on them.
+- Documentation Generation Pipeline & Review System (Implemented & Verified 28 October 2026):
+  - Worker: Celery task on Redis queue `documentation` executing Ollama `qwen2.5-coder:7b` with senior technical documentation prompt.
+  - Context Retrieval: Gathers hybrid context from Neo4j knowledge graph and Qdrant semantic vector chunks.
+  - Backend Endpoints:
+    - `POST /api/projects/{project_id}/analysis/{analysis_id}/documentation/generate`
+    - `GET /api/projects/{project_id}/documentation/versions/{version_id}`
+    - `PUT /api/projects/{project_id}/documentation/versions/{version_id}`
+    - `POST /api/projects/{project_id}/documentation/versions/{version_id}/commit` (commits to GitHub Contents API using App installation token)
+    - `GET /api/documentation/catalog`
+  - Frontend Workspace:
+    - `documentation-catalog.tsx`: standard 18px header matching `/repositories`.
+    - `markdown-editor.tsx`: token typewriter streaming (Claude/ChatGPT style), stats, Copy, Download, and Edit/Preview tab switcher.
+    - `markdown-preview.tsx`: full formatted markdown rendering with code block copy buttons, tables, headings, and lists.
+    - `generation-status-card.tsx`: real-time progress bar, live session timer, 5-stage pipeline checklist, clean professional icons (no AI sparkle icons).
+    - `draft-review-card.tsx`: Approve & Commit Changes button, Focus Document Editor button, Revise Document (Regenerate with AI) in red colour, editable Destination File input targeting repo root (defaults & falls back to `/README.md` or custom name), and collapsible Agent Telemetry.
+
+- GitHub Actions & Webhook Automation (Implemented & Verified 28 October 2026):
+  - Machine Authentication: `backend/app/services/project_token_service.py` provides HMAC-SHA256 authenticated project tokens (`rf_proj_<id>_<sig>`) for GitHub Actions runners without requiring destructive database schema changes. Token is fetched via `GET /api/projects/{project_id}/action-token`.
+  - GitHub Actions Endpoints (`backend/app/routes/actions.py`):
+    - `POST /api/actions/documentation/check`: Evaluates incoming PR changed files, checks staleness against `main`, and generates a formatted markdown report for GitHub Step Summary and PR bot comments.
+    - `POST /api/actions/documentation/sync`: Headless API trigger for automated documentation generation upon push/merge into `main`, queuing synthesis in the Celery worker.
+  - GitHub Actions Dual-Job Workflow (`.github/workflows/regforge-docs.yml`):
+    - `check-pr-docs`: Runs on pull requests; inspects changed files, invokes RegForge check API, publishes GitHub Step Summary, and creates/updates a sticky PR review bot comment.
+    - `sync-main-docs`: Runs on push/merge to `main`/`master`; invokes RegForge sync API to trigger automated documentation version `v{N+1}` generation.
+  - Webhooks: Extended `backend/app/routes/webhooks.py` with `pull_request` event handling (detects merged PRs) and automated push stale tracking.
+  - Service: `app/documentation/services/documentation_stale_service.py` detects commit divergence between the latest codebase commits and current documentation version, marking `ProjectDocumentation.status = "stale"`. Includes self-commit loop prevention: explicitly ignores RegForge's own documentation commits (via `committed_commit_sha`, `"via RegForge AI"` commit message check, and committer verification) so committing documentation never falsely marks it as stale.
+  - Backend Endpoints: Added `GET /api/projects/{project_id}/documentation/status` returning real-time `is_stale`, commit SHAs, and active version numbers; updated `POST /{project_id}/documentation/versions/{version_id}/commit` to persist `committed_commit_sha` and maintain `active` status.
+  - Frontend Stale Alerts & Action:
+    - `project-details-page.tsx`: Displays an alert banner when documentation is stale with commit divergence indicators; includes an "Actions" header button matching `rounded-lg` size and using the official GitHub Actions circle-play octicon, opening the setup dialog.
+    - `github-action-dialog.tsx`: Comprehensive setup modal featuring 1-click token copy, secret configuration guide (`REGFORGE_PROJECT_TOKEN`), explanation of both PR check & auto-sync capabilities, and full `.github/workflows/regforge-docs.yml` syntax viewer with 1-click copy.
+    - `generate-documentation-button.tsx`: Dynamically transforms into `"Update Stale Document (v{N+1})"` with amber pulsing badge.
+    - `documentation-catalog.tsx`: Displays real-time `Stale` vs `Active` badges on canonical project cards.
+
+- Dynamic Overview Telemetry & Setup Progress (Implemented 28 October 2026):
+  - Backend Endpoint: `GET /api/overview/telemetry` (`backend/app/routes/overview.py`) queries real `ProjectAnalysis` and `DocumentationGenerationJob` records, computes active agents (running/queued), total executions, checks live Ollama status, and provides real chronologically-sorted recent activities.
+  - Frontend Overview: `overview-dashboard.tsx` feeds live telemetry into `AgentTelemetry` (metrics + real activity rows) and `QuickSetupGuide` (dynamic progress calculation without hardcoded booleans).
+
+- AI Models & Inference Engines Console (Implemented 28 October 2026):
+  - Backend Endpoints (`backend/app/routes/models.py`):
+    - `GET /api/models`: Queries local Ollama daemon (`127.0.0.1:11434`) for active version, tags, and running models; returns model specs, VRAM footprints, latency metrics, and local cached models.
+    - `POST /api/models/test-inference`: Executes interactive sandbox test prompts with generation hyperparameters (temperature, top_p, token limit).
+    - `POST /api/models/active`: Switches primary active inference engine.
+    - `POST /api/models/hyperparameters`: Persists generation directives.
+  - Modular Frontend Architecture (`reqforge/src/components/user-dashboard/models/`):
+    - `types.ts` & `models-api.ts`: Type safety and API client communication.
+    - `header/models-header.tsx`: Breadcrumb, daemon status pill, Rescan Daemon and Pull New Model triggers.
+    - `metrics/models-kpi-cards.tsx`: 4 high-density KPI cards (Active Model, Inference Latency, Daily Volume, VRAM Utilization).
+    - `active-engine/active-engine-card.tsx`: Primary active engine detail with `model-specs-strip.tsx`, `generation-hyperparameters.tsx`, and `inference-sandbox.tsx` (terminal console with live token streaming and evaluation).
+    - `model-cache/available-models-grid.tsx` & `model-card-item.tsx`: Local cache inventory (`qwen2.5-coder:7b`, `qwen2.5:7b`, `llama3.1:8b`, `nomic-embed-text`) with quick-switch actions.
+    - `daemon-settings/daemon-connection-card.tsx` & `terminal-helper-card.tsx`: REST API connection inputs, cloud fallback toggle, and 1-click copyable Ollama CLI terminal commands.
+    - `dialogs/pull-model-dialog.tsx`: Model download modal.
+    - Route Page: `reqforge/src/app/(user-dashboard)/[github-username]/models/page.tsx`.
+
+### Next Immediate Milestone (In Progress / Next Step)
+- Code Review & Auto-PR Generation:
+  - Automate code review feedback on PR webhooks.
+  - Generate automated documentation PRs directly when code merges to main.
 
 ### Planned / not confirmed implemented
 
--   Documentation-generation pipeline and UI button integration.
--   Commit-aware Qdrant snapshots/versioning and reliable stale-chunk cleanup.
--   Incremental indexing triggered by repository pushes.
--   Documentation version persistence and history UI.
--   AI code-review pipeline.
--   Unit-test and integration-test generation.
--   Prometheus metrics and Grafana dashboards.
--   GitHub Actions workflows.
--   AWS production deployment and production observability.
+- Commit-aware Qdrant snapshots/versioning and reliable stale-chunk cleanup.
+- AI code-review pipeline.
+- Unit-test and integration-test generation.
+- Prometheus metrics and Grafana dashboards.
+- AWS production deployment and production observability.
 -   Kubernetes, if later justified by deployment needs.
 
 ## 3. Technology stack
@@ -985,13 +1038,34 @@ documentation request end to end.
 
 Start Redis, ensure Ollama is serving `qwen2.5-coder:7b`, run the Celery worker locally using `-P solo` on Windows, and generate a real document from an analysed project to test the end-to-end pipeline.
 
-## 22. AI Documentation prompt configuration and UI typography alignment — 28 October 2026
+## 22. AI Documentation prompt configuration, UI typography alignment & runtime testing — 28 October 2026
 
 ### Implemented
 - In `reqforge/src/components/user-dashboard/documentations/catalog/documentation-catalog.tsx`, updated the page header title `Documentation Catalog` from `text-3xl` to `text-[18px] font-semibold tracking-[-0.02em] text-[#191725]`, matching the exact typography and sizing used in the `Repositories` panel header.
 - In `backend/app/workers/documentation/tasks.py`, updated `SYSTEM_PROMPT` to the comprehensive 20+ year senior technical documentation engineer and software architect role prompt specified by the user.
 - Verified frontend types with `npx tsc --noEmit` (passed with code 0).
 - Verified backend syntax compilation with `python -m compileall -q backend/app/workers/documentation/tasks.py` (passed with code 0).
+- Started Redis container (`reqforge-redis`) via `docker compose -f backend/infrastructure/queue/docker-compose.queue.yml up -d redis` and verified healthy status with `redis-cli ping` (returned `PONG`).
+- Confirmed Docker stack status: `reqforge-redis` (port 6379), `reqforge-qdrant` (port 6333), and `reqforge-neo4j` (ports 7474, 7687) are running.
+- Documented Windows local Celery worker execution command (`-P solo` pool).
+- In `reqforge/src/components/user-dashboard/documentations/review-panel/generation-status-card.tsx`, engineered a comprehensive, senior-grade generation progress card featuring:
+  - Real-time animated progress bar with percentage calculation.
+  - Live elapsed timer (`00:00`).
+  - 5-stage pipeline checklist: (1) Task Queued, (2) Repository Snapshot, (3) RAG & Graph Indexing, (4) AI Technical Writer (Ollama qwen2.5-coder:7b), (5) Markdown Assembly.
+  - Distinguishes `queued` (waiting for worker) from `generating` (active synthesis) and `ready` (100% complete).
+- Passed `createdAt` into `GenerationStatusCard` from `documentation-workspace.tsx`.
+- Resolved the empty editor issue in `markdown-editor.tsx`: previously `useState(content)` initialized to `""` during generation and never resynced when the 5,488-character completed documentation arrived via polling.
+- Implemented real-time token streaming typewriter effect in `markdown-editor.tsx` matching ChatGPT/Claude UX:
+  - Tokens burst smoothly into the editor with auto-scroll and blinking cursor.
+  - Added "Streaming tokens (%)" live badge with a "Skip to end" action.
+  - Added "Copy .md" and "Download .md" buttons.
+  - Added live word count and line count statistics.
+- Verified that full 5,488-character generated documentation for `Harsh-s7-hub/medify_backend` is successfully persisted in Supabase PostgreSQL with status `ready`.
+- Verified TypeScript build with `npx tsc --noEmit` (passed with code 0).
+
+### Next agreed step
+
+Ensure Ollama is running and serving `qwen2.5-coder:7b`, start the Celery worker via `.\venv\Scripts\celery.exe -A app.workers.celery_app.celery_app worker --loglevel=INFO --queues=documentation -P solo`, and watch the worker consume the queued task, index vectors into Qdrant, extract Neo4j graph context, prompt Ollama, and deliver the final Markdown to the workspace.
 
 ## 23. Permanent engineering standard
 
@@ -1007,3 +1081,55 @@ responsibility. Avoid monolithic components, duplicated logic, unrelated
 concerns in the same module, placeholder hardcoding, and shortcuts that leave
 the codebase messy. Prefer clear imports and composition over large all-in-one
 implementations, while avoiding needless abstraction or directory churn.
+
+## 24. AI Models Header Streamlining & Global Hidden Scrollbars — 28 October 2026
+
+### Implemented
+- In `reqforge/src/components/user-dashboard/models/header/models-header.tsx`:
+  - Removed clutter from the header: breadcrumbs (`Workspace / Configuration / AI Models`), green daemon status pill (`● http://127.0.0.1:11434 • Ollama Daemon v0.35.0`), and long description paragraph.
+  - Streamlined to a clean, modern title `AI Models & Inference Engines` aligned with the standard RegForge dashboard header aesthetic, alongside the `[ ⟳ Rescan Daemon ]` and `[ + Pull New Model ]` action buttons.
+- In `reqforge/src/components/user-dashboard/models/models-page-content.tsx`:
+  - Removed `pr-1` and added `hide-scrollbar [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden` to keep the content fully scrollable without any visible scrollbar.
+- In `reqforge/src/app/globals.css`:
+  - Verified TypeScript compilation with `npx tsc --noEmit` (passed with code 0).
+
+## 25. Dynamic Model Hyperparameters, System Prompt Directives & Live Telemetry — 29 October 2026
+
+### Implemented
+- Created `backend/app/services/model_config_service.py`:
+  - Centralized model configuration, hyperparameters, and live performance telemetry backed by Redis (`reqforge:ai_model:hyperparameters`, `reqforge:ai_model:active`, `reqforge:ai_model:telemetry`) with local disk cache fallback.
+  - Enables seamless cross-process synchronization between FastAPI web routes and the Celery worker process.
+  - Dynamically computes live Model KPIs (average latency ms/tok, throughput tok/s, rolling token volume, and live VRAM footprint from Ollama `GET /api/ps`).
+- Updated `backend/app/workers/documentation/tasks.py`:
+  - Replaced hardcoded module-level system prompt and static generation options with dynamic lookups from `model_config_service.get_hyperparameters()` and `model_config_service.get_active_model()`.
+  - Celery documentation worker automatically uses any updated system prompt directive and hyperparameters saved from the UI.
+- Updated `backend/ai_services/ollama/client.py`:
+  - Added support for dynamic parameters (`temperature`, `top_p`, `num_predict`, `model`, `system`) and automatic telemetry recording on every generation response.
+- Updated `backend/app/routes/models.py`:
+  - Replaced static KPIs and in-memory mock variables with live telemetry and persistent configurations via `model_config_service`.
+  - Added `POST /api/models/hyperparameters/reset` to restore production defaults.
+- Updated `reqforge/src/components/user-dashboard/models/active-engine/generation-hyperparameters.tsx`:
+  - Configured recommended production defaults: `temperature: 0.20`, `top_p: 0.85`, `max_output_tokens: 4096`, and the comprehensive 20+ year senior technical documentation engineer system prompt.
+  - Added chic `Recommended` badges on 0.20 temperature, 0.85 top-p, and the 4096 max tokens button.
+  - "Save Directives" persists changes to backend Redis store.
+  - "Reset Defaults" restores recommended values.
+- Verified and fixed `context` definition in `backend/app/workers/documentation/tasks.py`: restored `DocumentationContextBuilder().build(...)` call prior to passing `context` into `OllamaClient().generate(...)`.
+- Verified Python compilation (`python -m compileall`) and TypeScript checking (`npx tsc --noEmit`) — both passed with code 0.
+
+## 26. Supabase PostgreSQL Persistence for AI Model Configurations — 29 October 2026
+
+### Implemented
+- Created SQLAlchemy model `AIModelConfiguration` in `backend/app/models/ai_model_configuration.py` with columns:
+  - `id` (Integer PK), `user_id` (Integer FK to users.id, nullable), `active_model` (String 100), `temperature` (Float), `top_p` (Float), `max_output_tokens` (Integer), `system_prompt` (Text), `is_active` (Boolean), `created_at` (DateTime TZ), `updated_at` (DateTime TZ).
+- Registered `AIModelConfiguration` in `backend/app/models/__init__.py`.
+- Created Alembic migration `backend/alembic/versions/c7e2f1a9b4d8_create_ai_model_configurations.py`:
+  - Upgraded database schema from `a3b7c9d2e4f1` to `c7e2f1a9b4d8`.
+  - Created table `ai_model_configurations` in Supabase PostgreSQL with indexes on `id`, `user_id`, and `is_active`.
+  - Seeded initial active record with the 20+ year senior technical documentation prompt directive and recommended defaults.
+- Updated `backend/app/services/model_config_service.py`:
+  - Three-tier synchronization:
+    1. **Primary Database Persistence**: Persists all changes directly into Supabase PostgreSQL table `ai_model_configurations`.
+    2. **Low-Latency In-Memory Cache**: Automatically syncs with Redis (`reqforge:ai_model:hyperparameters`) for sub-millisecond reads by FastAPI and the Celery documentation generation worker.
+    3. **Local Disk Snapshot**: Writes to `model_config_cache.json` for resilient offline booting.
+- Tested roundtrip DB update and rollback: verified live record creation, query, update, and reset back to production defaults in Supabase PostgreSQL.
+- Verified TypeScript build (`npx tsc --noEmit`) and Python syntax (`python -m compileall`) passed with code 0.
