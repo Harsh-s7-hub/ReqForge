@@ -5,6 +5,7 @@ from app.documentation.schemas.documentation import (
     DocumentationContentUpdate,
     DocumentationGenerationResponse,
     DocumentationVersionResponse,
+    DocumentationCatalogResponse,
 )
 from app.documentation.services.documentation_service import DocumentationService
 from app.models.project import Project
@@ -15,6 +16,7 @@ from app.workers.documentation.dispatch import dispatch_generation_job
 
 
 router = APIRouter(prefix="/api/projects", tags=["Documentation"])
+catalog_router = APIRouter(prefix="/api/documentation", tags=["Documentation"])
 
 
 def _get_owned_project(db: Session, request: Request, project_id: int) -> Project:
@@ -104,3 +106,27 @@ def update_documentation_version(
         return service.save_edit(version, payload.content)
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@catalog_router.get("/catalog", response_model=DocumentationCatalogResponse)
+def get_documentation_catalog(request: Request, db: Session = Depends(get_db)):
+    current_user = get_current_user(db, request)
+    return {"documents": DocumentationService(db).catalog_for_user(current_user.id)}
+
+
+@catalog_router.get("/{documentation_id}/versions/{version_id}", response_model=DocumentationVersionResponse)
+def get_catalog_document_version(
+    documentation_id: int,
+    version_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    current_user = get_current_user(db, request)
+    version = DocumentationService(db).get_owned_document_version(
+        current_user.id,
+        documentation_id,
+        version_id,
+    )
+    if not version:
+        raise HTTPException(status_code=404, detail="Documentation version not found.")
+    return version

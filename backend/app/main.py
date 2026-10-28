@@ -10,7 +10,10 @@ from app.routes.project_analysis import router as project_analysis_router
 from app.routes.project_commits import router as project_commits_router
 from app.routes.project_graph import router as project_graph_router
 from app.routes.project_commit_analysis import router as project_commit_analysis_router
-from app.routes.documentation import router as documentation_router
+from app.routes.documentation import (
+    router as documentation_router,
+    catalog_router as documentation_catalog_router,
+)
 import logging
 
 logging.basicConfig(level=logging.INFO)
@@ -43,6 +46,7 @@ app.include_router(project_commits_router)
 app.include_router(project_graph_router)
 app.include_router(project_commit_analysis_router)
 app.include_router(documentation_router)
+app.include_router(documentation_catalog_router)
 
 @app.get("/")
 async def root():

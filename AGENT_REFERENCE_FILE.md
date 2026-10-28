@@ -1,3 +1,8 @@
+<!-- COMMANDS -->
+<!-- FRONTEND : npm run dev -->
+<!-- BACKEND : uvicorn app.main:app --reload --host 127.0.0.1 --port 8001 -->
+
+
 # RegForge --- Project Context and Handoff Guide for AI Agents
 
 **Purpose:** Give an AI coding agent a structured understanding of
@@ -937,3 +942,68 @@ documentation API.
 Visually inspect the new route in the browser using an analysed project, then
 start/verify the Redis and Celery worker runtime before testing a real generated
 documentation request end to end.
+
+## 21. Documentation catalog and historical versions — 28 October 2026
+
+### Approved product decision
+
+- The updated UI design confirms one canonical Repository Documentation record
+  per project, with a current version and zero or more historical versions. Do
+  not create hardcoded document types, repositories, health values, telemetry,
+  or version data merely to imitate the visual reference.
+
+### Implemented
+
+- Added protected, user-scoped read APIs:
+  - `GET /api/documentation/catalog` returns only the authenticated user's real
+    documentation records grouped with project/repository data and versions.
+  - `GET /api/documentation/{documentation_id}/versions/{version_id}` returns
+    one owned version for the historical route without exposing a project ID in
+    its path.
+- Catalog values are persisted or derived from persisted content: project name,
+  repository full name, title, status, version number, commit SHA, timestamps,
+  word count, and line count.
+- Added `/(user-dashboard)/[github-username]/documentations/page.tsx` for the
+  dynamic Documentation Catalog, including client-side filter and real counts.
+- Added `/(user-dashboard)/[github-username]/documentations/[documentation-id]/versions/[version-id]/page.tsx`
+  for a read-only historical snapshot. The current version stays in the
+  existing editable workspace.
+- Added focused catalog and historical-view components under
+  `components/user-dashboard/documentations/`; existing sidebar and header
+  visuals remain unchanged.
+
+### Verification actually run
+
+- `python -m compileall -q app/documentation app/routes/documentation.py app/main.py`
+  passed using the backend virtual environment.
+- `npx tsc --noEmit` passed.
+- Targeted ESLint for all documentation components/routes passed.
+- `git diff --check` reported no whitespace errors. Windows line-ending warnings
+  were informational only.
+
+### Next agreed step
+
+Start Redis, ensure Ollama is serving `qwen2.5-coder:7b`, run the Celery worker locally using `-P solo` on Windows, and generate a real document from an analysed project to test the end-to-end pipeline.
+
+## 22. AI Documentation prompt configuration and UI typography alignment — 28 October 2026
+
+### Implemented
+- In `reqforge/src/components/user-dashboard/documentations/catalog/documentation-catalog.tsx`, updated the page header title `Documentation Catalog` from `text-3xl` to `text-[18px] font-semibold tracking-[-0.02em] text-[#191725]`, matching the exact typography and sizing used in the `Repositories` panel header.
+- In `backend/app/workers/documentation/tasks.py`, updated `SYSTEM_PROMPT` to the comprehensive 20+ year senior technical documentation engineer and software architect role prompt specified by the user.
+- Verified frontend types with `npx tsc --noEmit` (passed with code 0).
+- Verified backend syntax compilation with `python -m compileall -q backend/app/workers/documentation/tasks.py` (passed with code 0).
+
+## 23. Permanent engineering standard
+
+For every frontend or backend task, work with the discipline of a senior
+developer with 20+ years of professional experience in that specialty. Design
+changes before implementing them, follow the existing architecture where it is
+sound, and keep every feature modular, secure, maintainable, testable, and
+cleanly named.
+
+Always break work into the smallest practical cohesive files, components,
+services, schemas, routes, and tests. Each file must have one clear
+responsibility. Avoid monolithic components, duplicated logic, unrelated
+concerns in the same module, placeholder hardcoding, and shortcuts that leave
+the codebase messy. Prefer clear imports and composition over large all-in-one
+implementations, while avoiding needless abstraction or directory churn.

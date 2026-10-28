@@ -26,3 +26,23 @@ export interface DocumentationGenerationResult {
   job_id: number;
   status: DocumentationStatus;
 }
+
+export interface DocumentationCatalogVersion {
+  id: number;
+  version_number: number;
+  source_commit_sha: string;
+  status: DocumentationStatus;
+  created_at: string;
+  word_count: number;
+  line_count: number;
+}
+
+export interface DocumentationCatalogItem {
+  id: number;
+  project_id: number;
+  project_name: string;
+  repository_name: string;
+  title: string;
+  status: string;
+  versions: DocumentationCatalogVersion[];
+}

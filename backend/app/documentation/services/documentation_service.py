@@ -8,6 +8,7 @@ from app.models.documentation_version import DocumentationVersion
 from app.models.project import Project
 from app.models.project_analysis import ProjectAnalysis
 from app.models.project_documentation import ProjectDocumentation
+from app.models.github_repositories import GitHubRepository
 
 
 class DocumentationService:
@@ -82,6 +83,63 @@ class DocumentationService:
         self.db.commit()
         self.db.refresh(version)
         return version
+
+    def catalog_for_user(self, user_id: int) -> list[dict]:
+        documents = (
+            self.db.query(ProjectDocumentation, Project, GitHubRepository)
+            .join(Project, Project.id == ProjectDocumentation.project_id)
+            .join(GitHubRepository, GitHubRepository.id == Project.repository_id)
+            .filter(
+                Project.user_id == user_id,
+                ProjectDocumentation.document_type == self.DOCUMENT_TYPE,
+            )
+            .order_by(Project.name.asc())
+            .all()
+        )
+        catalog = []
+        for documentation, project, repository in documents:
+            versions = (
+                self.db.query(DocumentationVersion)
+                .filter(DocumentationVersion.documentation_id == documentation.id)
+                .order_by(DocumentationVersion.version_number.desc())
+                .all()
+            )
+            catalog.append({
+                "id": documentation.id,
+                "project_id": project.id,
+                "project_name": project.name,
+                "repository_name": repository.full_name,
+                "title": documentation.title,
+                "status": documentation.status,
+                "versions": [self._catalog_version(version) for version in versions],
+            })
+        return catalog
+
+    def get_owned_document_version(self, user_id: int, documentation_id: int, version_id: int) -> DocumentationVersion | None:
+        return (
+            self.db.query(DocumentationVersion)
+            .join(ProjectDocumentation)
+            .join(Project, Project.id == ProjectDocumentation.project_id)
+            .filter(
+                Project.user_id == user_id,
+                ProjectDocumentation.id == documentation_id,
+                DocumentationVersion.id == version_id,
+            )
+            .first()
+        )
+
+    @staticmethod
+    def _catalog_version(version: DocumentationVersion) -> dict:
+        content = version.content or version.ai_generated_content or ""
+        return {
+            "id": version.id,
+            "version_number": version.version_number,
+            "source_commit_sha": version.source_commit_sha,
+            "status": version.status,
+            "created_at": version.created_at,
+            "word_count": len(content.split()),
+            "line_count": len(content.splitlines()),
+        }
 
     def _ensure_no_active_generation(self, project_id: int, analysis_id: int) -> None:
         active = (

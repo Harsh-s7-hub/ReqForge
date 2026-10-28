@@ -27,3 +27,27 @@ class DocumentationGenerationResponse(BaseModel):
     version_id: int
     job_id: int
     status: str
+
+
+class DocumentationCatalogVersion(BaseModel):
+    id: int
+    version_number: int
+    source_commit_sha: str
+    status: str
+    created_at: datetime
+    word_count: int
+    line_count: int
+
+
+class DocumentationCatalogItem(BaseModel):
+    id: int
+    project_id: int
+    project_name: str
+    repository_name: str
+    title: str
+    status: str
+    versions: list[DocumentationCatalogVersion]
+
+
+class DocumentationCatalogResponse(BaseModel):
+    documents: list[DocumentationCatalogItem]

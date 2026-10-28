@@ -1,6 +1,7 @@
 import type {
   DocumentationGenerationResult,
   DocumentationVersion,
+  DocumentationCatalogItem,
 } from "./types";
 
 const API_URL =
@@ -12,6 +13,23 @@ async function parseResponse<T>(response: Response): Promise<T> {
     throw new Error(data?.detail || "Documentation request failed.");
   }
   return data as T;
+}
+
+export async function getDocumentationCatalog(): Promise<DocumentationCatalogItem[]> {
+  const response = await fetch(`${API_URL}/api/documentation/catalog`, {
+    credentials: "include",
+    cache: "no-store",
+  });
+  const data = await parseResponse<{ documents: DocumentationCatalogItem[] }>(response);
+  return data.documents;
+}
+
+export async function getCatalogDocumentVersion(documentationId: number, versionId: number): Promise<DocumentationVersion> {
+  const response = await fetch(`${API_URL}/api/documentation/${documentationId}/versions/${versionId}`, {
+    credentials: "include",
+    cache: "no-store",
+  });
+  return parseResponse<DocumentationVersion>(response);
 }
 
 export async function requestDocumentationGeneration(
